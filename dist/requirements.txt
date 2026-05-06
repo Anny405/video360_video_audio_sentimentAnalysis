@@ -1,0 +1,8 @@
+ultralytics>=8.4
+mediapipe==0.10.13
+opencv-python>=4.6
+numpy
+pandas
+torch
+torchvision
+plotly
