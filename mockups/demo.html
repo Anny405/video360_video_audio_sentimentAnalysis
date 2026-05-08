@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video360 — Live Demo (test_input.mp4)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          ink: { 950: '#0F172A', 900: '#111827', 800: '#1E293B' },
+          brand: { DEFAULT: '#EC4899', 600: '#DB2777' },
+          beam:  { DEFAULT: '#2563EB', 400: '#60A5FA' },
+        },
+        boxShadow: { glow: '0 0 24px rgba(236,72,153,0.35)' },
+      },
+    },
+  };
+</script>
+<style>
+  html, body { background: #0F172A; }
+  body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  *:focus-visible { outline: 2px solid #EC4899; outline-offset: 2px; border-radius: 4px; }
+
+  .stage {
+    background:
+      radial-gradient(60% 90% at 25% 40%, rgba(96,165,250,0.10), transparent 60%),
+      radial-gradient(50% 80% at 75% 60%, rgba(236,72,153,0.10), transparent 60%),
+      linear-gradient(180deg, #0B1220 0%, #14182A 100%);
+  }
+  video { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+  .bbox {
+    position: absolute;
+    border: 2px solid var(--c, #EC4899);
+    border-radius: 4px;
+    transition: left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear, opacity 120ms;
+    pointer-events: none;
+  }
+  .bbox-label {
+    position: absolute;
+    top: -22px;
+    left: 0;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--c, #EC4899);
+    color: white;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  .bbox-conf {
+    margin-left: 6px;
+    opacity: 0.8;
+    font-weight: 500;
+  }
+
+  .timeline-track {
+    background: rgba(255,255,255,0.06);
+    position: relative;
+    height: 18px;
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+  .lane-cell { position: absolute; top: 0; bottom: 0; }
+
+  .scrubber {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 14px; height: 14px; border-radius: 9999px;
+    background: #EC4899; border: 2px solid white;
+    box-shadow: 0 0 12px rgba(236,72,153,0.6);
+    pointer-events: none;
+  }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 2px 8px; border-radius: 9999px;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+    font-size: 11px;
+    color: rgba(255,255,255,0.75);
+  }
+
+  /* tiny waveform */
+  @keyframes pb { 0%,100%{transform:scaleY(.35)} 50%{transform:scaleY(1)} }
+  .bar { transform-origin: 50% 100%; animation: pb 1s ease-in-out infinite; }
+  .bar:nth-child(2){animation-delay:.08s} .bar:nth-child(3){animation-delay:.16s}
+  .bar:nth-child(4){animation-delay:.24s} .bar:nth-child(5){animation-delay:.32s}
+
+  @media (prefers-reduced-motion: reduce) { .bar { animation: none; } }
+</style>
+</head>
+<body class="text-white">
+
+<header class="sticky top-0 z-30 border-b border-white/[0.06] bg-ink-950/85 backdrop-blur">
+  <div class="mx-auto flex h-14 max-w-[1600px] items-center gap-6 px-5">
+    <div class="flex items-center gap-2">
+      <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand text-white shadow-glow">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 12c3-5 15-5 18 0"/><path d="M3 12c3 5 15 5 18 0"/></svg>
+      </span>
+      <span class="font-semibold tracking-tight">Video360</span>
+      <span class="ml-2 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-white/60">live demo</span>
+    </div>
+    <div class="ml-auto flex items-center gap-2 text-xs text-white/60">
+      <span class="pill"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> data: real pipeline output</span>
+      <span class="pill" id="src-pill">test_input.mp4</span>
+    </div>
+  </div>
+</header>
+
+<main class="mx-auto max-w-[1600px] px-5 py-6">
+
+  <!-- title -->
+  <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <div class="text-[11px] uppercase tracking-widest text-white/40">Session</div>
+      <h1 class="mt-1 text-2xl font-semibold tracking-tight md:text-[28px]">Lab meeting · panorama 1920×360 · <span id="meta-duration" class="text-white/50">—</span></h1>
+      <div class="mt-1.5 flex flex-wrap items-center gap-2">
+        <span class="pill" id="meta-fps">— fps</span>
+        <span class="pill" id="meta-frames">— frames</span>
+        <span class="pill" id="meta-participants">— participants</span>
+        <span class="pill">YOLOv8 + face/pose features</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIDEO STAGE (full width, 16:3) -->
+  <div class="overflow-hidden rounded-2xl border border-white/[0.06] bg-ink-900">
+    <div id="stage" class="stage relative w-full overflow-hidden" style="aspect-ratio: 1920/360;">
+      <video id="video" muted playsinline preload="metadata"></video>
+      <!-- bboxes injected here -->
+      <div id="overlay" class="absolute inset-0 pointer-events-none"></div>
+
+      <!-- HUD top -->
+      <div class="absolute left-3 top-3 z-10 flex items-center gap-2">
+        <span class="pill"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>360° equirectangular</span>
+        <span class="pill" id="hud-frame">frame —</span>
+      </div>
+      <div class="absolute right-3 top-3 z-10 flex items-center gap-2">
+        <span class="pill"><span class="relative flex h-2 w-2"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60"></span><span class="relative inline-flex h-2 w-2 rounded-full bg-brand"></span></span> playing</span>
+      </div>
+    </div>
+
+    <!-- transport -->
+    <div class="border-t border-white/[0.06] px-4 py-3">
+      <div class="flex items-center gap-3">
+        <button id="btn-prev" class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Skip back 1s">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/></svg>
+        </button>
+        <button id="btn-play" class="grid h-10 w-10 place-items-center rounded-full bg-brand text-white shadow-glow transition hover:bg-brand-600 cursor-pointer" aria-label="Play">
+          <svg id="ic-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          <svg id="ic-pause" class="hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <button id="btn-next" class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Skip forward 1s">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></svg>
+        </button>
+        <div class="ml-1 font-mono text-xs tabular-nums text-white/70"><span id="t-cur" class="text-white">00:00</span> <span class="text-white/30">/</span> <span id="t-tot">00:30</span></div>
+
+        <input id="seek" type="range" min="0" max="1000" value="0" class="ml-3 flex-1 accent-pink-500 cursor-pointer" />
+
+        <button id="btn-rate" class="grid h-9 w-12 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer text-xs font-medium">1×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold tracking-tight">Behavior timeline</h3>
+      <div class="flex items-center gap-3 text-[11px] text-white/50">
+        <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-amber-400"></span>Smile</span>
+        <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-beam"></span>Head turn</span>
+        <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-emerald-400"></span>Note-taking</span>
+        <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-violet-400"></span>Look down</span>
+      </div>
+    </div>
+    <div id="timeline" class="mt-4 space-y-3"></div>
+    <div class="relative mt-3 h-7">
+      <div class="absolute inset-x-0 top-3 h-px bg-white/10"></div>
+      <div class="absolute inset-x-0 top-0 grid grid-cols-7 text-[10px] text-white/40">
+        <span>0:00</span><span>0:05</span><span>0:10</span><span>0:15</span><span>0:20</span><span>0:25</span><span class="text-right">0:30</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM 3-COL -->
+  <div class="mt-5 grid grid-cols-12 gap-5">
+
+    <!-- Participants -->
+    <div class="col-span-12 lg:col-span-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-semibold tracking-tight">Participants <span class="text-white/40 font-normal" id="p-count">(—)</span></h2>
+        <span class="text-[11px] text-white/40">live state</span>
+      </div>
+      <ul id="participants" class="space-y-2"></ul>
+    </div>
+
+    <!-- Insights -->
+    <div class="col-span-12 lg:col-span-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <h3 class="text-sm font-semibold tracking-tight">Engagement (forward gaze %)</h3>
+      <p class="mt-0.5 text-[11px] text-white/40">From look_down + turn_left + turn_right flags</p>
+      <ul id="engagement" class="mt-3 space-y-3 text-xs"></ul>
+
+      <h3 class="mt-5 text-sm font-semibold tracking-tight">Smile score (live)</h3>
+      <p class="mt-0.5 text-[11px] text-white/40">DeepFace-derived smile_score per frame</p>
+      <ul id="smile" class="mt-3 space-y-2 text-xs"></ul>
+    </div>
+
+    <!-- Auto summary -->
+    <div class="col-span-12 lg:col-span-3 rounded-2xl border border-white/[0.06] bg-gradient-to-br from-brand/[0.06] to-beam/[0.06] p-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold tracking-tight">Session report</h3>
+        <span class="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/60">draft</span>
+      </div>
+      <div id="summary" class="mt-2 text-xs leading-5 text-white/75 space-y-2"></div>
+
+      <div class="mt-4 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-[11px] text-white/55">
+        <div class="font-medium text-white/80 mb-1">Source files</div>
+        <div class="font-mono">
+          test_run/test_input.mp4<br/>
+          features_yolo01/*.csv<br/>
+          behavior_outputs/*.csv
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="mx-auto max-w-[1600px] px-5 pb-10 pt-2 text-[11px] text-white/40">
+  Video360 · Dark Mode (OLED) · YOLOv8 detection re-run live + 02_face_headpose CSVs
+</footer>
+
+<script src="data.js"></script>
+<script>
+(() => {
+  const D = window.VIDEO360_DATA;
+  if (!D) {
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="padding:20px;background:#7f1d1d;color:white;font-family:monospace">data.js not found — run: .venv_test/bin/python mockups/build_data.py</div>');
+    return;
+  }
+
+  const fmt = (s) => {
+    const m = Math.floor(s/60), x = Math.floor(s%60);
+    return `${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`;
+  };
+
+  // ---- meta ----
+  document.getElementById('t-tot').textContent = fmt(D.video.duration);
+  document.getElementById('meta-duration').textContent = `${D.video.duration.toFixed(1)}s`;
+  document.getElementById('meta-fps').textContent = `${D.video.fps.toFixed(2)} fps`;
+  document.getElementById('meta-frames').textContent = `${D.video.frames} frames`;
+  document.getElementById('meta-participants').textContent = `${D.participants.length} participants`;
+
+  // ---- video ----
+  const v = document.getElementById('video');
+  v.src = D.video.src;
+  v.load();
+
+  // ---- participant cards ----
+  const pUl = document.getElementById('participants');
+  document.getElementById('p-count').textContent = `(${D.participants.length})`;
+  const cardEls = {};
+  for (const p of D.participants) {
+    const li = document.createElement('li');
+    li.className = 'rounded-xl border border-white/[0.06] p-3';
+    li.innerHTML = `
+      <div class="flex items-center gap-3">
+        <div class="grid h-10 w-10 place-items-center rounded-full text-sm font-semibold" style="background:${p.color}33;color:${p.color}">${p.name[0]}</div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between">
+            <p class="truncate text-sm font-medium">${p.name}</p>
+            <span class="text-[11px]" data-state style="color:${p.color}">—</span>
+          </div>
+          <div class="mt-0.5 flex items-center gap-2 text-[11px] text-white/55">
+            <span data-meta>slot ${p.slot}</span>
+          </div>
+        </div>
+        <div class="flex h-7 items-end gap-[2px]" data-wave>
+          <span class="bar w-[3px] rounded-sm" style="height:18px;background:${p.color}"></span>
+          <span class="bar w-[3px] rounded-sm" style="height:22px;background:${p.color}"></span>
+          <span class="bar w-[3px] rounded-sm" style="height:14px;background:${p.color}"></span>
+          <span class="bar w-[3px] rounded-sm" style="height:24px;background:${p.color}"></span>
+          <span class="bar w-[3px] rounded-sm" style="height:16px;background:${p.color}"></span>
+        </div>
+      </div>
+      <div class="mt-3 grid grid-cols-3 gap-2 text-center">
+        <div class="rounded-md bg-white/[0.04] p-2"><div class="text-[10px] text-white/40">YAW</div><div class="font-mono text-sm tabular-nums" data-yaw>—</div></div>
+        <div class="rounded-md bg-white/[0.04] p-2"><div class="text-[10px] text-white/40">PITCH</div><div class="font-mono text-sm tabular-nums" data-pitch>—</div></div>
+        <div class="rounded-md bg-white/[0.04] p-2"><div class="text-[10px] text-white/40">SMILE</div><div class="font-mono text-sm tabular-nums" data-smile>—</div></div>
+      </div>
+    `;
+    pUl.appendChild(li);
+    cardEls[p.slot] = li;
+  }
+
+  // ---- engagement bars (static aggregate) ----
+  const eUl = document.getElementById('engagement');
+  for (const p of D.participants) {
+    const pct = p.summary.forward_pct ?? 0;
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div class="flex items-center justify-between"><span>${p.name}</span><span class="text-white/60">${pct}%</span></div>
+      <div class="mt-1 h-1.5 rounded-full bg-white/[0.06]">
+        <div class="h-1.5 rounded-full" style="width:${pct}%;background:${p.color}"></div>
+      </div>
+    `;
+    eUl.appendChild(li);
+  }
+
+  // ---- smile live bars ----
+  const sUl = document.getElementById('smile');
+  const smileEls = {};
+  for (const p of D.participants) {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div class="flex items-center justify-between"><span>${p.name}</span><span class="text-white/60" data-val>—</span></div>
+      <div class="mt-1 h-1.5 rounded-full bg-white/[0.06]">
+        <div class="h-1.5 rounded-full transition-[width] duration-150" data-bar style="width:0%;background:${p.color}"></div>
+      </div>
+    `;
+    sUl.appendChild(li);
+    smileEls[p.slot] = li;
+  }
+
+  // ---- summary text ----
+  const sumEl = document.getElementById('summary');
+  const totalDur = D.video.duration;
+  const speakers = D.participants.map(p => `${p.name} (${p.summary.forward_pct}% forward)`).join(', ');
+  const turners = D.participants.filter(p => p.summary.turn_events > 0)
+    .map(p => `${p.name} (${p.summary.turn_events} turn events)`).join(', ') || 'no significant head turns';
+  const avgSmile = (D.participants.reduce((s,p)=>s+(p.summary.avg_smile||0),0) / D.participants.length).toFixed(2);
+  sumEl.innerHTML = `
+    <p>30-second clip with <b class="text-white">${D.participants.length}</b> detected participants
+    (slots ${D.participants.map(p=>p.slot).join(', ')}).</p>
+    <p>Engagement: ${speakers}.</p>
+    <p>Head movement: ${turners}.</p>
+    <p>Avg smile score: <b class="text-white">${avgSmile}</b>.</p>
+    <p class="text-white/50">Behaviors like <span class="font-mono">notes</span>, <span class="font-mono">nodding</span>, <span class="font-mono">smiling</span> did not exceed thresholds in this clip.</p>
+  `;
+
+  // ---- timeline lanes ----
+  const tlEl = document.getElementById('timeline');
+  const dur = D.video.duration;
+  for (const p of D.participants) {
+    const rows = D.behaviors[String(p.slot)];
+    const rowDiv = document.createElement('div');
+    rowDiv.className = 'grid grid-cols-[88px_1fr] items-center gap-3';
+    const trackDiv = document.createElement('div');
+    trackDiv.className = 'timeline-track';
+    trackDiv.style.position = 'relative';
+    // smile gradient cells (by row, ~0.27s wide each)
+    const cellW = 100 / rows.length;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const span = document.createElement('span');
+      span.className = 'lane-cell';
+      span.style.left = `${i * cellW}%`;
+      span.style.width = `${cellW + 0.5}%`;
+      const a = Math.max(0, Math.min(1, (r.smile - 0.2) / 0.4));
+      span.style.background = `rgba(251, 191, 36, ${a * 0.7})`;
+      trackDiv.appendChild(span);
+
+      if (r.turn_left || r.turn_right) {
+        const m = document.createElement('span');
+        m.className = 'lane-cell';
+        m.style.left = `${i * cellW}%`;
+        m.style.width = '2px';
+        m.style.background = '#60A5FA';
+        trackDiv.appendChild(m);
+      }
+      if (r.notes) {
+        const m = document.createElement('span');
+        m.className = 'lane-cell';
+        m.style.left = `${i * cellW}%`;
+        m.style.width = `${cellW + 0.5}%`;
+        m.style.background = 'rgba(52, 211, 153, 0.7)';
+        m.style.top = '60%';
+        m.style.height = '40%';
+        trackDiv.appendChild(m);
+      }
+      if (r.look_down) {
+        const m = document.createElement('span');
+        m.className = 'lane-cell';
+        m.style.left = `${i * cellW}%`;
+        m.style.width = `${cellW + 0.5}%`;
+        m.style.background = 'rgba(167, 139, 250, 0.6)';
+        m.style.top = '0%';
+        m.style.height = '40%';
+        trackDiv.appendChild(m);
+      }
+    }
+    // scrubber
+    const scr = document.createElement('div');
+    scr.className = 'scrubber';
+    scr.style.left = '0%';
+    scr.dataset.scrubber = String(p.slot);
+    trackDiv.appendChild(scr);
+
+    rowDiv.innerHTML = `<span class="text-xs" style="color:${p.color}">${p.name}</span>`;
+    rowDiv.appendChild(trackDiv);
+    tlEl.appendChild(rowDiv);
+  }
+
+  // ---- overlay bbox elements ----
+  const overlay = document.getElementById('overlay');
+  const boxEls = {};
+  for (const p of D.participants) {
+    const box = document.createElement('div');
+    box.className = 'bbox';
+    box.style.setProperty('--c', p.color);
+    box.style.opacity = '0';
+    box.innerHTML = `<span class="bbox-label">P${p.slot} · ${p.name}<span class="bbox-conf" data-conf>—</span></span>`;
+    overlay.appendChild(box);
+    boxEls[p.slot] = box;
+  }
+
+  // ---- nearest-row lookup ----
+  function nearest(rows, t) {
+    if (!rows.length) return null;
+    let lo = 0, hi = rows.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (rows[mid].t < t) lo = mid + 1; else hi = mid;
+    }
+    if (lo > 0 && Math.abs(rows[lo-1].t - t) < Math.abs(rows[lo].t - t)) lo -= 1;
+    return rows[lo];
+  }
+
+  // ---- per-frame update ----
+  function update() {
+    const t = v.currentTime;
+    const pct = (t / dur) * 100;
+    document.getElementById('t-cur').textContent = fmt(t);
+    document.getElementById('hud-frame').textContent = `frame ${Math.round(t * D.video.fps)}`;
+    document.getElementById('seek').value = String(Math.round(pct * 10));
+
+    for (const p of D.participants) {
+      const tr = nearest(D.tracks[String(p.slot)], t);
+      const bh = nearest(D.behaviors[String(p.slot)], t);
+      const box = boxEls[p.slot];
+      if (tr) {
+        box.style.left = `${tr.x1 * 100}%`;
+        box.style.top = `${tr.y1 * 100}%`;
+        box.style.width = `${(tr.x2 - tr.x1) * 100}%`;
+        box.style.height = `${(tr.y2 - tr.y1) * 100}%`;
+        box.style.opacity = '1';
+        box.querySelector('[data-conf]').textContent = tr.conf.toFixed(2);
+      } else {
+        box.style.opacity = '0.2';
+      }
+
+      const card = cardEls[p.slot];
+      if (bh) {
+        card.querySelector('[data-yaw]').textContent = bh.yaw == null ? '—' : bh.yaw.toFixed(2);
+        card.querySelector('[data-pitch]').textContent = bh.pitch == null ? '—' : bh.pitch.toFixed(2);
+        card.querySelector('[data-smile]').textContent = bh.smile.toFixed(2);
+
+        let label = 'observing';
+        if (bh.notes) label = 'note-taking';
+        else if (bh.turn_left) label = 'turn ←';
+        else if (bh.turn_right) label = 'turn →';
+        else if (bh.look_down) label = 'look down';
+        else if (bh.smiling) label = 'smiling';
+        else if (bh.nodding) label = 'nodding';
+        card.querySelector('[data-state]').textContent = label;
+
+        const sl = smileEls[p.slot];
+        sl.querySelector('[data-val]').textContent = bh.smile.toFixed(2);
+        sl.querySelector('[data-bar]').style.width = `${Math.min(100, Math.max(0, bh.smile * 100))}%`;
+      }
+    }
+
+    // scrubbers
+    for (const p of D.participants) {
+      const scr = document.querySelector(`.scrubber[data-scrubber="${p.slot}"]`);
+      if (scr) scr.style.left = `${pct}%`;
+    }
+  }
+
+  let raf;
+  function tick() {
+    update();
+    if (!v.paused && !v.ended) raf = requestAnimationFrame(tick);
+  }
+  v.addEventListener('play', () => {
+    document.getElementById('ic-play').classList.add('hidden');
+    document.getElementById('ic-pause').classList.remove('hidden');
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
+  });
+  v.addEventListener('pause', () => {
+    document.getElementById('ic-play').classList.remove('hidden');
+    document.getElementById('ic-pause').classList.add('hidden');
+    cancelAnimationFrame(raf);
+    update();
+  });
+  v.addEventListener('seeked', update);
+  v.addEventListener('loadedmetadata', update);
+
+  // ---- controls ----
+  document.getElementById('btn-play').addEventListener('click', () => {
+    if (v.paused) v.play(); else v.pause();
+  });
+  document.getElementById('btn-prev').addEventListener('click', () => { v.currentTime = Math.max(0, v.currentTime - 1); });
+  document.getElementById('btn-next').addEventListener('click', () => { v.currentTime = Math.min(dur, v.currentTime + 1); });
+  document.getElementById('seek').addEventListener('input', (e) => {
+    v.currentTime = (parseInt(e.target.value, 10) / 1000) * dur;
+  });
+  const rates = [1, 1.5, 2, 0.5];
+  let rIdx = 0;
+  document.getElementById('btn-rate').addEventListener('click', (e) => {
+    rIdx = (rIdx + 1) % rates.length;
+    v.playbackRate = rates[rIdx];
+    e.currentTarget.textContent = `${rates[rIdx]}×`;
+  });
+
+  // keyboard
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); v.paused ? v.play() : v.pause(); }
+    if (e.code === 'ArrowLeft') v.currentTime = Math.max(0, v.currentTime - 1);
+    if (e.code === 'ArrowRight') v.currentTime = Math.min(dur, v.currentTime + 1);
+  });
+})();
+</script>
+</body>
+</html>

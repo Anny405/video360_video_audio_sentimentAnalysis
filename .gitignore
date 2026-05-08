@@ -1,4 +1,38 @@
+# macOS
 .DS_Store
+
+# Python
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+.venv*/
+
+# Cloned external repos / skills (have their own .git)
+ui-ux-pro-max-skill/
+
+# Model weights (auto-downloaded by ultralytics)
+*.pt
+
+# === Recordings & derived data — privacy: real meeting recordings ===
+# Raw + processed media (any depth)
+*.wav
+*.mp3
+*.m4a
+*.mov
+output_top*.mp4
+
+# test_run media
+test_run/test_input.mp4
+test_run/video-test-run/
+test_run/autocrop_out/*.mp4
+test_run/autocrop_out/*.jpg
+
+# Pipeline-derived data containing real conversation / behaviors
+test_run/audio/transcripts/
+test_run/audio/merged_demo.*
+test_run/features_yolo01/
+test_run/behavior_outputs/
+
+# Generated demo data (contain real transcripts + bbox coords)
+mockups/data.js
+mockups/audio_data.js

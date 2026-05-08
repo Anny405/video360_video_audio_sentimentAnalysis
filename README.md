@@ -1,93 +1,105 @@
-# video360 — Participant Behavior Analysis from 360° Classroom Video
+# video360 — Multimodal Meeting Analysis
 
-A three-stage pipeline that takes a wide-angle (360°) classroom recording, isolates each participant, and produces per-frame behavioral features and an interactive timeline.
+A two-track pipeline + web UI that turns a 360° meeting recording plus 4 lapel-mic recordings into one synchronized view: per-participant cropped video, head-pose / gaze / note-taking behavior flags, dominant-channel speaker diarization, Whisper transcription with bleed-suppressed attribution, and per-utterance sentiment plotted on Russell's valence/arousal circumplex.
 
-## Pipeline Overview
+> **Privacy note:** This repo is **code only**. Real meeting recordings are excluded via `.gitignore`. To see the full UI, run the pipelines on your own data — see [Run locally](#run-locally) below.
 
-```
-360° stitched video (1920×360)
-        │
-        ▼
-00_autocrop_people       ← YOLO person detection → per-participant video crops
-        │
-        ▼
-01_yolo_detect_track_hpc ← YOLO Pose + MediaPipe FaceMesh → feature CSVs
-        │
-        ▼
-02_face_headpose_speaker_notetaking ← behavior inference + interactive visualization
-```
+🔗 **Live (code-only) page:** the GitHub Pages deployment of this repo serves [`index.html`](./index.html) at the root and [`mockups/app.html`](./mockups/app.html) for the unified UI shell. The shell needs locally-built `data.js` + `audio_data.js` to populate.
 
-## Notebooks
+---
 
-### `00_autocrop_people.ipynb`
-Detects up to 4 participants in the stitched panoramic video and exports a cropped video clip for each.
-
-- Samples frames with YOLOv8 to estimate a stable bounding box per participant slot
-- Computes a fixed crop window per slot (aspect-ratio-corrected, configurable margins)
-- Exports one `person_slotN_640x900.mp4` per active slot
-
-Key config knobs: `MARGIN_X`, `MARGIN_TOP`, `MARGIN_BOTTOM`, `DOWN_SHIFT`, `REGION_X_BOUNDS`
-
-### `01_yolo_detect_track_hpc.ipynb`
-Runs YOLOv8 Pose and MediaPipe FaceMesh on each cropped video to extract per-frame signals.
-
-**Features extracted per frame:**
-
-| Feature | Description |
-|---|---|
-| `yaw_proxy` | Horizontal head turn (nose vs. ear/eye midpoint) |
-| `pitch_proxy` | Vertical head tilt (nose vs. eye midpoint) |
-| `smile_score` | Mouth width / face width ratio |
-| `mouth_open_score` | Lip gap / face width ratio |
-| `left/right_wrist_x/y` | Normalized wrist positions |
-| `left/right_wrist_speed` | Wrist velocity between frames |
-| `engagement_score` | Composite score [0, 1] |
-
-Automatically adapts to 0, 1, or N GPUs using multiprocessing.
-
-### `02_face_headpose_speaker_notetaking.ipynb`
-Applies threshold-based behavior rules to feature CSVs and renders an interactive Plotly timeline.
-
-**Behaviors detected:**
-
-| Flag | Logic |
-|---|---|
-| `look_down_flag` | pitch > threshold |
-| `head_nodding_flag` | rolling pitch range > threshold |
-| `smiling_flag` | smile_score > 0.42 |
-| `speaking_like_flag` | mouth_open_score > 0.08 |
-| `take_notes_flag` | look_down AND hand near bottom AND hand moving |
-
-All thresholds are grouped in a single `params` dict for easy tuning.
-
-## Requirements
+## Pipeline overview
 
 ```
-ultralytics>=8.4
-mediapipe==0.10.13
-opencv-python
-pandas
-numpy
-torch
-torchvision
-plotly
+360° panorama mp4 ───┐                                ┌─── 4 lapel-mic wavs
+                     ▼                                ▼
+   dist/00_autocrop_people.py            test_run/audio/decrosstalk.py
+   dist/01_yolo_detect_track_hpc.py      test_run/audio/merge_dominant.py
+   dist/02_face_headpose_…py             test_run/audio/transcribe.py  (mlx-whisper)
+                     │                                │
+                     │                  test_run/audio/sentiment.py    (DistilRoBERTa→V/A)
+                     │                                │
+        mockups/build_data.py             mockups/build_audio_data.py
+                     │                                │
+                     └────────► mockups/app.html ◄────┘
+                                (panorama + 4 cards + timeline + circumplex)
 ```
 
-The notebooks are designed for **Google Colab** with input/output stored in Google Drive under `MyDrive/CREATE Lab/video_agent360/`.
-
-## Data Flow
+## Repo layout
 
 ```
-Google Drive
-└── CREATE Lab/video_agent360/
-    ├── output_top.mp4              ← raw 360° input
-    ├── autocrop_out/
-    │   ├── person_slot0_640x900.mp4
-    │   ├── person_slot2_640x900.mp4
-    │   ├── person_slot3_640x900.mp4
-    │   └── debug_crop_windows.jpg
-    └── features_yolo01/
-        ├── person_slot0_640x900_features.csv
-        ├── person_slot2_640x900_features.csv
-        └── person_slot3_640x900_features.csv
+.
+├── dist/                       # video pipeline (CLI scripts)
+│   ├── 00_autocrop_people.py
+│   ├── 01_yolo_detect_track_hpc.py
+│   ├── 02_face_headpose_speaker_notetaking.py
+│   └── requirements.txt
+├── test_run/audio/             # audio pipeline (CLI scripts)
+│   ├── decrosstalk.py          # FIR mic-bleed cancellation
+│   ├── merge_dominant.py       # loudest-channel merge → mono + speaker labels
+│   ├── transcribe.py           # mlx-whisper per channel + merged dialogue
+│   └── sentiment.py            # DistilRoBERTa-emotion → V/A → 4 quadrants
+├── mockups/                    # web UI
+│   ├── app.html                # unified panorama + 4 cards + circumplex
+│   ├── demo.html               # video-only drill-down
+│   ├── demo_audio.html         # audio-only drill-down
+│   ├── index.html              # original static design mockup
+│   ├── build_data.py           # video pipeline outputs → data.js
+│   ├── build_audio_data.py     # audio pipeline outputs → audio_data.js
+│   └── serve.py                # tiny Range-aware static server (browser-friendly mp4 streaming)
+├── *.ipynb                     # original notebooks (cleared outputs)
+├── index.html                  # root landing page (code-only deployment)
+└── README.md
 ```
+
+## Run locally
+
+```bash
+# 1. clone + venv
+git clone https://github.com/Anny405/video360_video_audio_sentimentAnalysis.git
+cd video360_video_audio_sentimentAnalysis
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r dist/requirements.txt
+pip install mlx-whisper transformers soundfile
+
+# 2. drop in your own recordings
+#    test_run/test_input.mp4                     ← 360° panorama
+#    test_run/audio/<your>-ch1.wav … ch4.wav     ← 4 lapel mics
+
+# 3. video chain
+python dist/00_autocrop_people.py --input test_run/test_input.mp4 --out test_run/autocrop_out
+python dist/01_yolo_detect_track_hpc.py --input-dir test_run/autocrop_out --output-dir test_run/features_yolo01
+python dist/02_face_headpose_speaker_notetaking.py --input-dir test_run/features_yolo01 --output-dir test_run/behavior_outputs --no-html
+
+# 4. audio chain (run from inside test_run/audio)
+cd test_run/audio
+python decrosstalk.py *.wav
+python merge_dominant.py *_clean.wav -o merged_demo --names S1 S2 S3
+python transcribe.py *_clean.wav --merge -o transcripts
+python sentiment.py
+cd ../..
+
+# 5. build demo data + serve
+python mockups/build_data.py
+python mockups/build_audio_data.py
+python mockups/serve.py 8765
+# open http://127.0.0.1:8765/mockups/app.html
+```
+
+## What's in `mockups/app.html`
+
+A single-page interactive view that:
+
+- Plays the 360° panorama at the top with **YOLO bbox overlays** (live position + confidence)
+- Renders **4 participant cards**, each with: cropped per-person video (synced to master), live yaw/pitch/smile readouts, mini speaker timeline, deduped Whisper transcript with auto-scroll
+- Below: **multi-lane speaker timeline** (combined + per-speaker) clickable to seek
+- **Sentiment circumplex** SVG plot: 46 utterance dots + 3 speaker centroids on Russell's V/A plane, with quadrant tints, fine labels, hover detail, click-to-seek, and a sigmoid-stretch toggle for low-emotion meetings
+- Master clock = panorama; cropped videos and merged audio follow with 0.18s tolerance
+
+## Sentiment method (sentiment.py)
+
+7-class DistilRoBERTa output (`anger / disgust / fear / joy / neutral / sadness / surprise`) → weighted Russell anchors → `(V, A)` centroid → nearest of 13 fine labels (`delighted, glad, pleased, satisfied, calm, content, miserable, bored, tired, depressed, frustrated, annoyed, alarmed`) → 4 quadrants (`Q1 joyful · Q2 angry · Q3 depressed · Q4 content`).
+
+## License
+
+MIT. Recordings excluded for privacy.

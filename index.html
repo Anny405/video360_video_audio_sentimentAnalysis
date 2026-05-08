@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video360 — Multimodal Meeting Analysis</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      fontFamily: { sans: ['Inter','ui-sans-serif','system-ui'], mono: ['JetBrains Mono','ui-monospace','monospace'] },
+      colors: {
+        ink: { 950: '#0F172A', 900: '#111827', 800: '#1E293B' },
+        brand: { DEFAULT: '#EC4899', 600: '#DB2777' },
+        beam:  { DEFAULT: '#2563EB', 400: '#60A5FA' },
+      },
+      boxShadow: { glow: '0 0 24px rgba(236,72,153,0.35)' },
+    } },
+  };
+</script>
+<style>
+  html, body { background: #0F172A; }
+  body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  *:focus-visible { outline: 2px solid #EC4899; outline-offset: 2px; border-radius: 4px; }
+  .stage {
+    background:
+      radial-gradient(60% 90% at 25% 40%, rgba(96,165,250,0.10), transparent 60%),
+      radial-gradient(50% 80% at 75% 60%, rgba(236,72,153,0.10), transparent 60%),
+      linear-gradient(180deg, #0B1220 0%, #14182A 100%);
+  }
+  .pill {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:2px 8px; border-radius:9999px;
+    border:1px solid rgba(255,255,255,0.10);
+    background:rgba(255,255,255,0.04);
+    font-size:11px; color:rgba(255,255,255,0.75);
+  }
+  pre code { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+</style>
+</head>
+<body class="text-white">
+
+<header class="sticky top-0 z-30 border-b border-white/[0.06] bg-ink-950/85 backdrop-blur">
+  <div class="mx-auto flex h-14 max-w-[1100px] items-center gap-6 px-5">
+    <div class="flex items-center gap-2">
+      <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand text-white shadow-glow">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 12c3-5 15-5 18 0"/><path d="M3 12c3 5 15 5 18 0"/></svg>
+      </span>
+      <span class="font-semibold tracking-tight">Video360</span>
+      <span class="ml-2 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-white/60">code only</span>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <a href="mockups/app.html" class="pill hover:text-white cursor-pointer">live demo (requires local data) →</a>
+    </div>
+  </div>
+</header>
+
+<main class="mx-auto max-w-[1100px] px-5 py-10">
+
+  <!-- HERO -->
+  <section class="stage rounded-2xl border border-white/[0.06] p-8 md:p-12">
+    <div class="text-[11px] uppercase tracking-widest text-white/40">multimodal meeting analysis</div>
+    <h1 class="mt-2 text-4xl md:text-[44px] font-semibold tracking-tight leading-tight">
+      Video360 ·
+      <span class="bg-gradient-to-r from-brand to-beam-400 bg-clip-text text-transparent">behavior + audio + sentiment</span>
+    </h1>
+    <p class="mt-4 max-w-[640px] text-white/70 leading-relaxed">
+      A pipeline that turns a 360° meeting recording + 4 lapel-mic recordings into one synchronized web view:
+      per-participant cropped video, YOLO-tracked behavior (head pose, gaze, note-taking),
+      Whisper transcription with bleed-suppressed speaker attribution, and per-utterance
+      sentiment plotted on Russell's valence/arousal circumplex.
+    </p>
+    <div class="mt-6 flex flex-wrap items-center gap-2">
+      <span class="pill"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>YOLOv8 detect+track</span>
+      <span class="pill"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>MediaPipe face/pose</span>
+      <span class="pill"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>FIR decrosstalk</span>
+      <span class="pill"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>Dominant-channel diarization</span>
+      <span class="pill"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>mlx-whisper turbo</span>
+      <span class="pill"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>DistilRoBERTa emotion → V/A</span>
+    </div>
+    <div class="mt-7 flex flex-wrap gap-3">
+      <a href="mockups/app.html" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white shadow-glow hover:bg-brand-600 cursor-pointer">Open the unified app</a>
+      <a href="https://github.com/Anny405/video360_video_audio_sentimentAnalysis" class="rounded-md border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/80 hover:bg-white/[0.08] cursor-pointer">Source on GitHub</a>
+    </div>
+    <p class="mt-4 text-xs text-white/45">
+      Note: this hosted page is <b>code only</b>. The live demo needs the user's own
+      meeting recording (mp4 + 4-channel wav) — see "Run locally" below.
+    </p>
+  </section>
+
+  <!-- PIPELINE -->
+  <section class="mt-10 grid grid-cols-1 md:grid-cols-2 gap-5">
+    <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <div class="text-[10px] uppercase tracking-widest text-white/40">video pipeline</div>
+      <ol class="mt-3 space-y-3 text-sm">
+        <li class="flex items-start gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-brand/20 text-xs font-semibold text-brand">1</span><div><div class="font-medium">Auto-crop participants</div><div class="text-white/50 text-xs mt-0.5">YOLOv8 person detection on 4 panorama slots → fixed crop windows → 4× <span class="font-mono">person_slot{0..3}_640x900.mp4</span></div></div></li>
+        <li class="flex items-start gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-brand/20 text-xs font-semibold text-brand">2</span><div><div class="font-medium">Pose + face features</div><div class="text-white/50 text-xs mt-0.5">YOLO pose + MediaPipe face mesh → yaw/pitch proxies, smile score, wrist motion per frame</div></div></li>
+        <li class="flex items-start gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-brand/20 text-xs font-semibold text-brand">3</span><div><div class="font-medium">Behavior inference</div><div class="text-white/50 text-xs mt-0.5">Threshold + temporal logic → look_down, turn_left/right, head_nodding, smiling, take_notes flags</div></div></li>
+      </ol>
+    </div>
+
+    <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <div class="text-[10px] uppercase tracking-widest text-white/40">audio pipeline</div>
+      <ol class="mt-3 space-y-3 text-sm">
+        <li class="flex items-start gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-beam/25 text-xs font-semibold text-beam-400">1</span><div><div class="font-medium">Decrosstalk</div><div class="text-white/50 text-xs mt-0.5">Per-channel FIR fit on "target silent" frames; subtract predicted bleed. ~−18 dB cleaner.</div></div></li>
+        <li class="flex items-start gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-beam/25 text-xs font-semibold text-beam-400">2</span><div><div class="font-medium">Dominant-channel merge</div><div class="text-white/50 text-xs mt-0.5">Loudest channel wins each frame (hysteresis + Hann crossfade) → single mono + speaker labels</div></div></li>
+        <li class="flex items-start gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-beam/25 text-xs font-semibold text-beam-400">3</span><div><div class="font-medium">Whisper ASR per channel</div><div class="text-white/50 text-xs mt-0.5">mlx-whisper-large-v3-turbo on each clean wav; merged dialogue with speaker attribution</div></div></li>
+        <li class="flex items-start gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-beam/25 text-xs font-semibold text-beam-400">4</span><div><div class="font-medium">Sentiment → V/A</div><div class="text-white/50 text-xs mt-0.5">DistilRoBERTa-emotion (7 classes) → weighted Russell anchors → 4 quadrants + 13 fine labels</div></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- RUN LOCALLY -->
+  <section class="mt-10 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+    <div class="text-[10px] uppercase tracking-widest text-white/40">run locally</div>
+    <h2 class="mt-1 text-xl font-semibold">Bring your own recording</h2>
+    <p class="mt-2 text-sm text-white/65">
+      The hosted page can't include real meeting recordings (privacy). To see the live UI with synced
+      panorama / cropped videos / per-speaker audio / transcript / circumplex, run the pipelines on
+      your own data:
+    </p>
+    <pre class="mt-4 overflow-x-auto rounded-lg border border-white/10 bg-black/30 p-4 text-white/80"><code># 1. clone + venv
+git clone https://github.com/Anny405/video360_video_audio_sentimentAnalysis.git
+cd video360_video_audio_sentimentAnalysis
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r dist/requirements.txt
+pip install mlx-whisper transformers soundfile
+
+# 2. drop your own recordings
+#    - test_run/test_input.mp4                       (panorama)
+#    - test_run/audio/*.wav                          (per-mic, one per speaker)
+
+# 3. video chain
+python dist/00_autocrop_people.py --input test_run/test_input.mp4 --out test_run/autocrop_out
+python dist/01_yolo_detect_track_hpc.py --input-dir test_run/autocrop_out --output-dir test_run/features_yolo01
+python dist/02_face_headpose_speaker_notetaking.py --input-dir test_run/features_yolo01 --output-dir test_run/behavior_outputs --no-html
+
+# 4. audio chain (run from inside test_run/audio)
+python decrosstalk.py *.wav
+python merge_dominant.py *_clean.wav -o merged_demo --names S1 S2 S3
+python transcribe.py *_clean.wav --merge -o transcripts
+python sentiment.py
+
+# 5. build demo data + serve
+python mockups/build_data.py
+python mockups/build_audio_data.py
+python mockups/serve.py 8765
+# open http://127.0.0.1:8765/mockups/app.html
+</code></pre>
+  </section>
+
+  <!-- LAYOUT -->
+  <section class="mt-10 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+    <div class="text-[10px] uppercase tracking-widest text-white/40">repo layout</div>
+    <pre class="mt-3 overflow-x-auto rounded-lg border border-white/10 bg-black/30 p-4 text-white/80"><code>video360/
+├── dist/                       # video pipeline (CLI scripts)
+│   ├── 00_autocrop_people.py
+│   ├── 01_yolo_detect_track_hpc.py
+│   └── 02_face_headpose_speaker_notetaking.py
+├── test_run/audio/             # audio pipeline (CLI scripts)
+│   ├── decrosstalk.py
+│   ├── merge_dominant.py
+│   ├── transcribe.py
+│   └── sentiment.py
+├── mockups/                    # web UI
+│   ├── app.html                # unified panorama + 4 cards + circumplex
+│   ├── demo.html               # video-only drill-down
+│   ├── demo_audio.html         # audio-only drill-down
+│   ├── build_data.py           # video pipeline → data.js
+│   ├── build_audio_data.py     # audio pipeline → audio_data.js
+│   └── serve.py                # tiny Range-aware static server
+├── *.ipynb                     # original notebooks (cleared outputs)
+└── index.html                  # this page
+</code></pre>
+  </section>
+
+  <footer class="mt-12 text-[11px] text-white/40 text-center">
+    Code MIT-licensed · Recordings excluded for privacy · Built with Claude Code
+  </footer>
+</main>
+
+</body>
+</html>

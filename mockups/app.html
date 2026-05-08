@@ -1,0 +1,1153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video360 — Unified Demo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          ink: { 950: '#0F172A', 900: '#111827', 800: '#1E293B' },
+          brand: { DEFAULT: '#EC4899', 600: '#DB2777' },
+          beam:  { DEFAULT: '#2563EB', 400: '#60A5FA' },
+        },
+        boxShadow: { glow: '0 0 24px rgba(236,72,153,0.35)' },
+      },
+    },
+  };
+</script>
+<style>
+  html, body { background: #0F172A; }
+  body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  *:focus-visible { outline: 2px solid #EC4899; outline-offset: 2px; border-radius: 4px; }
+
+  .stage {
+    background:
+      radial-gradient(60% 90% at 25% 40%, rgba(96,165,250,0.10), transparent 60%),
+      radial-gradient(50% 80% at 75% 60%, rgba(236,72,153,0.10), transparent 60%),
+      linear-gradient(180deg, #0B1220 0%, #14182A 100%);
+  }
+  video { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+  .pill {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:2px 8px; border-radius:9999px;
+    border:1px solid rgba(255,255,255,0.10);
+    background:rgba(255,255,255,0.04);
+    font-size:11px; color:rgba(255,255,255,0.75);
+  }
+
+  .bbox {
+    position: absolute;
+    border: 2px solid var(--c, #EC4899);
+    border-radius: 4px;
+    transition: left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear, opacity 120ms;
+    pointer-events: none;
+  }
+  .bbox-label {
+    position: absolute; top: -22px; left: 0;
+    font-size: 10px; font-weight: 600;
+    padding: 2px 6px; border-radius: 4px;
+    background: var(--c, #EC4899); color: white;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  .timeline-track {
+    position: relative; height: 18px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 6px; overflow: hidden;
+  }
+  .seg { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+  .scrubber {
+    position: absolute; top: -3px; bottom: -3px;
+    width: 2px; background: white; pointer-events: none;
+    box-shadow: 0 0 10px rgba(255,255,255,0.6);
+  }
+  .scrubber::before {
+    content:''; position:absolute; top:-4px; left:-5px;
+    width:12px; height:12px; border-radius:9999px;
+    background:#EC4899; border:2px solid white;
+    box-shadow: 0 0 10px rgba(236,72,153,0.6);
+  }
+
+  /* state machine */
+  body[data-state="idle"] .when-active { opacity: 0.35; pointer-events: none; }
+  body[data-state="active"] .when-idle { display: none; }
+
+  /* speaking pulse for cards */
+  @keyframes speak-glow {
+    0%,100% { box-shadow: 0 0 0 0 var(--c, #EC4899); }
+    50%     { box-shadow: 0 0 24px 0 var(--c, #EC4899); }
+  }
+  .card-speaking { animation: speak-glow 1.4s ease-in-out infinite; border-color: var(--c, #EC4899) !important; }
+
+  /* mini wave bars */
+  @keyframes pb { 0%,100%{transform:scaleY(.3)} 50%{transform:scaleY(1)} }
+  .bar { transform-origin: 50% 100%; animation: pb 1s ease-in-out infinite; animation-play-state: paused; }
+  body.playing .bar { animation-play-state: running; }
+  .bar:nth-child(2){animation-delay:.08s} .bar:nth-child(3){animation-delay:.16s}
+  .bar:nth-child(4){animation-delay:.24s} .bar:nth-child(5){animation-delay:.32s}
+
+  @media (prefers-reduced-motion: reduce) { .bar, .card-speaking { animation: none; } }
+
+  .upload-target {
+    border: 2px dashed rgba(255,255,255,0.2);
+    transition: border-color 200ms, background 200ms;
+  }
+  .upload-target:hover { border-color: rgba(236,72,153,0.6); background: rgba(236,72,153,0.04); }
+  .upload-target.dragover { border-color: #EC4899; background: rgba(236,72,153,0.08); }
+
+  .transcript-turn { cursor: pointer; }
+  .transcript-turn:hover { background: rgba(255,255,255,0.05); }
+</style>
+</head>
+<body class="text-white" data-state="idle">
+
+<header class="sticky top-0 z-30 border-b border-white/[0.06] bg-ink-950/85 backdrop-blur">
+  <div class="mx-auto flex h-14 max-w-[1600px] items-center gap-6 px-5">
+    <div class="flex items-center gap-2">
+      <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand text-white shadow-glow">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 12c3-5 15-5 18 0"/><path d="M3 12c3 5 15 5 18 0"/></svg>
+      </span>
+      <span class="font-semibold tracking-tight">Video360</span>
+      <span class="ml-2 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-white/60">unified</span>
+    </div>
+    <nav class="hidden items-center gap-1 text-sm md:flex">
+      <a href="app.html" class="rounded-md bg-white/[0.06] px-3 py-1.5 text-white cursor-pointer transition hover:bg-white/[0.1]">App</a>
+      <a href="demo.html" class="rounded-md px-3 py-1.5 text-white/60 cursor-pointer transition hover:text-white hover:bg-white/[0.06]">Video only</a>
+      <a href="demo_audio.html" class="rounded-md px-3 py-1.5 text-white/60 cursor-pointer transition hover:text-white hover:bg-white/[0.06]">Audio only</a>
+    </nav>
+    <div class="ml-auto flex items-center gap-2">
+      <span id="state-pill" class="pill">
+        <span id="state-dot" class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+        <span id="state-text">idle — waiting for upload</span>
+      </span>
+      <input id="file-input" type="file" accept="video/*" class="hidden" />
+      <button id="btn-upload" class="flex items-center gap-2 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white shadow-glow transition hover:bg-brand-600 cursor-pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+        Upload panorama
+      </button>
+      <button id="btn-reset" class="hidden grid h-9 w-9 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08] hover:text-white cursor-pointer" aria-label="Reset">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="mx-auto max-w-[1600px] px-5 py-6">
+
+  <!-- title -->
+  <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <div class="text-[11px] uppercase tracking-widest text-white/40">Session</div>
+      <h1 id="title" class="mt-1 text-2xl font-semibold tracking-tight md:text-[28px]">Upload a 360° panorama to begin</h1>
+      <div class="mt-1.5 flex flex-wrap items-center gap-2">
+        <span id="pill-dur" class="pill">— duration</span>
+        <span id="pill-fps" class="pill">— fps</span>
+        <span id="pill-active" class="pill">— active participants</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANORAMA STAGE -->
+  <div class="overflow-hidden rounded-2xl border border-white/[0.06] bg-ink-900">
+    <div id="stage" class="stage upload-target relative w-full overflow-hidden cursor-pointer" style="aspect-ratio: 1920/334;">
+      <video id="panorama" muted playsinline preload="metadata"></video>
+      <div id="overlay" class="absolute inset-0 pointer-events-none"></div>
+
+      <!-- HUD -->
+      <div class="absolute left-3 top-3 z-10 flex items-center gap-2">
+        <span class="pill"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>360° equirectangular</span>
+        <span class="pill" id="hud-frame">frame —</span>
+      </div>
+
+      <!-- idle overlay -->
+      <div class="when-idle absolute inset-0 z-20 grid place-items-center">
+        <div class="text-center">
+          <div class="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-white/[0.06] backdrop-blur-sm">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+          </div>
+          <div class="text-base font-medium">Drop a panorama video here<br/><span class="text-white/50 text-sm font-normal">or click to choose · or use the demo session</span></div>
+          <button id="btn-demo" class="mt-4 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white shadow-glow hover:bg-brand-600 cursor-pointer">Use test_input.mp4 (demo)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- master transport -->
+    <div class="when-active border-t border-white/[0.06] px-4 py-3">
+      <div class="flex items-center gap-3">
+        <button id="btn-prev" class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Skip back 1s">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/></svg>
+        </button>
+        <button id="btn-play" class="grid h-10 w-10 place-items-center rounded-full bg-brand text-white shadow-glow transition hover:bg-brand-600 cursor-pointer" aria-label="Play">
+          <svg id="ic-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          <svg id="ic-pause" class="hidden" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <button id="btn-next" class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Skip forward 1s">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></svg>
+        </button>
+        <div class="ml-1 font-mono text-xs tabular-nums text-white/70"><span id="t-cur" class="text-white">00:00</span> <span class="text-white/30">/</span> <span id="t-tot">00:00</span></div>
+        <input id="seek" type="range" min="0" max="1000" value="0" class="ml-3 flex-1 accent-pink-500 cursor-pointer" />
+        <button id="btn-mute" class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Mute audio">
+          <svg id="ic-vol" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <svg id="ic-mute" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/></svg>
+        </button>
+        <button id="btn-rate" class="grid h-9 w-12 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer text-xs font-medium">1×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 PARTICIPANT CARDS -->
+  <div id="cards" class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"></div>
+
+  <!-- COMBINED SPEAKER TIMELINE -->
+  <div class="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold tracking-tight">Speaker timeline · <span id="aud-window">5:00</span></h3>
+      <div id="legend" class="flex flex-wrap items-center gap-2.5 text-[11px] text-white/55"></div>
+    </div>
+    <div class="mt-4 timeline-track" id="lane-combined" style="height:30px"></div>
+    <div id="lanes-per-speaker" class="mt-4 space-y-2.5"></div>
+    <div class="relative mt-3 h-7">
+      <div class="absolute inset-x-0 top-3 h-px bg-white/10"></div>
+      <div class="absolute inset-x-0 top-0 grid grid-cols-6 text-[10px] text-white/40">
+        <span>0:00</span><span>1:00</span><span>2:00</span><span>3:00</span><span>4:00</span><span class="text-right">5:00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SENTIMENT CIRCUMPLEX ============ -->
+  <section id="circumplex-section" class="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <h3 class="text-sm font-semibold tracking-tight">Sentiment circumplex</h3>
+        <span id="cx-stretch-badge" class="hidden rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-amber-300">nonlinear scale</span>
+      </div>
+      <div class="flex items-center gap-3 text-[11px] text-white/55">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input id="cx-stretch" type="checkbox" class="h-3.5 w-3.5 cursor-pointer accent-pink-500"/>
+          <span>nonlinear stretch (sigmoid k=2.5)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input id="cx-show-labels" type="checkbox" checked class="h-3.5 w-3.5 cursor-pointer accent-pink-500"/>
+          <span>quadrant labels</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="mt-3 grid grid-cols-1 gap-5 md:grid-cols-[minmax(320px,420px)_1fr]">
+      <!-- canvas -->
+      <div class="relative mx-auto" style="width:100%; max-width:420px; aspect-ratio:1/1;">
+        <svg id="cx-svg" viewBox="-1.15 -1.15 2.3 2.3" class="h-full w-full">
+          <!-- quadrant tinted backgrounds -->
+          <rect x="0"  y="-1" width="1" height="1" fill="#FBBF24" fill-opacity="0.05"/>   <!-- Q1 NE -->
+          <rect x="-1" y="-1" width="1" height="1" fill="#F87171" fill-opacity="0.05"/>   <!-- Q2 NW -->
+          <rect x="-1" y="0"  width="1" height="1" fill="#A78BFA" fill-opacity="0.05"/>   <!-- Q3 SW -->
+          <rect x="0"  y="0"  width="1" height="1" fill="#34D399" fill-opacity="0.05"/>   <!-- Q4 SE -->
+          <!-- unit circle -->
+          <circle cx="0" cy="0" r="1" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="0.008"/>
+          <circle cx="0" cy="0" r="0.5" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="0.005"/>
+          <!-- axes -->
+          <line x1="-1.1" y1="0" x2="1.1" y2="0" stroke="#60A5FA" stroke-width="0.012" stroke-linecap="round" opacity="0.7"/>
+          <line x1="0" y1="-1.1" x2="0" y2="1.1" stroke="#EF4444" stroke-width="0.012" stroke-linecap="round" opacity="0.7"/>
+          <!-- tick text -->
+          <g font-family="Inter" font-size="0.07" fill="rgba(255,255,255,0.5)" text-anchor="middle">
+            <text x="1.07" y="0.04" text-anchor="end">+v</text>
+            <text x="-1.07" y="0.04" text-anchor="start">−v</text>
+            <text x="0" y="-1.05" text-anchor="middle">+a</text>
+            <text x="0" y="1.10" text-anchor="middle">−a</text>
+          </g>
+          <!-- quadrant corner labels (toggle-able) -->
+          <g id="cx-quad-labels" font-family="Inter" font-size="0.085" font-weight="600">
+            <text x="-1.1" y="-1.05" fill="#F87171" text-anchor="start">angry</text>
+            <text x="1.1"  y="-1.05" fill="#FBBF24" text-anchor="end">joyful</text>
+            <text x="-1.1" y="1.12" fill="#A78BFA" text-anchor="start">depressed</text>
+            <text x="1.1"  y="1.12" fill="#34D399" text-anchor="end">content</text>
+          </g>
+          <!-- 12 fine label faint guides -->
+          <g id="cx-fine-labels" font-family="Inter" font-size="0.055" fill="rgba(255,255,255,0.32)" text-anchor="middle"></g>
+          <!-- utterance dots (injected) -->
+          <g id="cx-dots"></g>
+          <!-- centroids (injected) -->
+          <g id="cx-centroids"></g>
+        </svg>
+      </div>
+
+      <!-- right column: speaker centroids list + hover detail -->
+      <div class="flex flex-col gap-3">
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-white/40">Speaker centroids · 5 min average</div>
+          <ul id="cx-centroid-list" class="mt-2 space-y-1.5 text-xs"></ul>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-white/40">Quadrant histogram</div>
+          <ul id="cx-quad-hist" class="mt-2 space-y-1 text-xs"></ul>
+        </div>
+        <div class="rounded-lg border border-white/[0.06] bg-black/20 p-3 min-h-[88px]">
+          <div class="text-[10px] uppercase tracking-wider text-white/40">Hovered utterance</div>
+          <div id="cx-hover" class="mt-1.5 text-xs text-white/55 italic">hover any dot to inspect</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DATA SOURCES -->
+  <div class="mt-5 rounded-2xl border border-white/[0.06] bg-gradient-to-br from-brand/[0.04] to-beam/[0.04] p-4">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-white/40">Video pipeline</div>
+        <ul class="mt-1.5 space-y-1 text-xs text-white/70">
+          <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>autocrop → 4 slot crops (slot 1 empty)</li>
+          <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>YOLOv8 detect + track</li>
+          <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>face/headpose/notetaking features</li>
+        </ul>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-white/40">Audio pipeline</div>
+        <ul class="mt-1.5 space-y-1 text-xs text-white/70">
+          <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>4 ch → decrosstalk → merge_dominant</li>
+          <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>diarization → S1/S2/S3 (S4 not recorded)</li>
+          <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>transcribe.py (mlx-whisper) — pending</li>
+          <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full border border-white/30"></span>sentiment analysis — pending</li>
+        </ul>
+      </div>
+      <div>
+        <div class="text-[10px] uppercase tracking-wider text-white/40">Session alignment</div>
+        <p class="mt-1.5 text-xs text-white/60 leading-5">
+          5-min slice from <b>15:00–20:00</b> of the 2026-04-29 recording. Video and audio are now from the <b>same session, same time window</b> ✓.
+          P4 (Jordan) shows real video but <b>no audio</b>: channel 4 was not captured. Whisper transcripts are deduped by dominant-channel attribution.
+        </p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="mx-auto max-w-[1600px] px-5 pb-10 pt-2 text-[11px] text-white/40">
+  Video360 · Dark Mode (OLED) · master clock = panorama · 4 cropped feeds + merged audio follow
+</footer>
+
+<script src="data.js"></script>
+<script src="audio_data.js"></script>
+<script>
+(() => {
+  const V = window.VIDEO360_DATA;        // video data: tracks, behaviors per slot
+  const A = window.VIDEO360_AUDIO;       // audio data: segments, speakers
+  if (!V || !A) {
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="padding:20px;background:#7f1d1d;color:white;font-family:monospace">data files missing — run build_data.py and build_audio_data.py</div>');
+    return;
+  }
+
+  // ---- participant config (slot ↔ speaker mapping for the 15:00–20:00 clip) ----
+  const PARTICIPANTS = [
+    { id: 'P1', name: 'Alex',   slot: 0, speaker: 'S1', color: '#EC4899', crop: '../test_run/autocrop_out/person_slot0_640x900.mp4' },
+    { id: 'P2', name: 'Maya',   slot: 2, speaker: 'S2', color: '#60A5FA', crop: '../test_run/autocrop_out/person_slot2_640x900.mp4' },
+    { id: 'P3', name: 'Sam',    slot: 3, speaker: 'S3', color: '#34D399', crop: '../test_run/autocrop_out/person_slot3_640x900.mp4' },
+    { id: 'P4', name: 'Jordan', slot: 1, speaker: 'S4', color: '#A78BFA',
+      crop: '../test_run/autocrop_out/person_slot1_640x900.mp4',
+      disabled_audio: true, audio_reason: 'channel 4 not recorded' },
+  ];
+  const isAudioOff = (p) => !!p.disabled_audio;
+  const isVideoOff = (p) => !p.crop;
+
+  const fmt = (s) => {
+    if (!isFinite(s)) return '00:00';
+    const m = Math.floor(s/60), x = Math.floor(s%60);
+    return `${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`;
+  };
+
+  // ---- elements ----
+  const panorama = document.getElementById('panorama');
+  const audio = new Audio();
+  audio.preload = 'metadata';
+  audio.src = A.audio.src;
+
+  const VIDEO_DUR = V.video.duration;        // 30.0 s — master timeline length
+  const AUDIO_WINDOW = Math.min(VIDEO_DUR, A.audio.duration);  // we only display this audio window
+
+  // ---- speaker color helpers ----
+  const speakerById = Object.fromEntries(A.speakers.map(s => [s.id, s]));
+  const participantBySpeaker = Object.fromEntries(PARTICIPANTS.map(p => [p.speaker, p]));
+  const spkColor = (id) => participantBySpeaker[id]?.color || speakerById[id]?.color || 'rgba(255,255,255,0.06)';
+
+  // ---- slice audio segments to first VIDEO_DUR seconds, by participant ----
+  const audioByPart = {}; // {speakerId: [{start,end,channel}]}
+  for (const p of PARTICIPANTS) audioByPart[p.speaker] = [];
+  const allSegsInWindow = [];
+  for (const seg of A.segments) {
+    if (seg.start >= AUDIO_WINDOW) break;
+    const s = { start: seg.start, end: Math.min(seg.end, AUDIO_WINDOW), speaker: seg.speaker, channel: seg.channel };
+    allSegsInWindow.push(s);
+    if (audioByPart[seg.speaker]) audioByPart[seg.speaker].push(s);
+  }
+
+  // per-participant talk stats within the window
+  const partStats = {};
+  for (const p of PARTICIPANTS) {
+    const segs = audioByPart[p.speaker] || [];
+    const total = segs.reduce((acc, s) => acc + (s.end - s.start), 0);
+    partStats[p.speaker] = {
+      total_sec: total,
+      segments: segs.length,
+      pct: AUDIO_WINDOW ? (total / AUDIO_WINDOW * 100) : 0,
+    };
+  }
+
+  // ---- title meta ----
+  document.getElementById('pill-dur').textContent = `${VIDEO_DUR.toFixed(1)} s`;
+  document.getElementById('pill-fps').textContent = `${V.video.fps.toFixed(2)} fps`;
+  document.getElementById('pill-active').textContent =
+    `${PARTICIPANTS.filter(p => !isVideoOff(p)).length} of 4 video · ` +
+    `${PARTICIPANTS.filter(p => !isAudioOff(p)).length} of 4 audio`;
+  document.getElementById('aud-window').textContent = AUDIO_WINDOW.toFixed(0);
+  document.getElementById('t-tot').textContent = fmt(VIDEO_DUR);
+
+  // ---- bbox overlays on panorama ----
+  const overlay = document.getElementById('overlay');
+  const boxEls = {};
+  for (const p of PARTICIPANTS) {
+    if (isVideoOff(p)) continue;
+    const box = document.createElement('div');
+    box.className = 'bbox';
+    box.style.setProperty('--c', p.color);
+    box.style.opacity = '0';
+    box.innerHTML = `<span class="bbox-label">${p.id} · ${p.name}<span class="ml-1.5 opacity-80" data-conf>—</span></span>`;
+    overlay.appendChild(box);
+    boxEls[p.slot] = box;
+  }
+
+  // ---- legend ----
+  const legend = document.getElementById('legend');
+  for (const p of PARTICIPANTS) {
+    const b = document.createElement('span');
+    b.className = 'inline-flex items-center gap-1.5';
+    if (isAudioOff(p)) b.style.opacity = '0.4';
+    b.innerHTML = `<span class="h-2 w-2 rounded-sm" style="background:${p.color}"></span>${p.id} · ${p.name}${isAudioOff(p) ? ' (no audio)' : ''}`;
+    legend.appendChild(b);
+  }
+  const sl = document.createElement('span');
+  sl.className = 'inline-flex items-center gap-1.5 opacity-60';
+  sl.innerHTML = `<span class="h-2 w-2 rounded-sm" style="background:rgba(255,255,255,0.15)"></span>silence`;
+  legend.appendChild(sl);
+
+  // ---- combined lane (audio window) ----
+  const combined = document.getElementById('lane-combined');
+  for (const seg of allSegsInWindow) {
+    if (seg.speaker === 'silence') continue;
+    const left = (seg.start / AUDIO_WINDOW) * 100;
+    const w = ((seg.end - seg.start) / AUDIO_WINDOW) * 100;
+    const el = document.createElement('span');
+    el.className = 'seg';
+    el.style.left = `${left}%`;
+    el.style.width = `${Math.max(w, 0.05)}%`;
+    el.style.background = spkColor(seg.speaker);
+    combined.appendChild(el);
+  }
+  const scrComb = document.createElement('div');
+  scrComb.className = 'scrubber';
+  scrComb.id = 'scr-combined';
+  scrComb.style.left = '0%';
+  combined.appendChild(scrComb);
+  combined.addEventListener('click', (e) => {
+    const r = combined.getBoundingClientRect();
+    const pct = (e.clientX - r.left) / r.width;
+    panorama.currentTime = Math.max(0, Math.min(VIDEO_DUR, pct * VIDEO_DUR));
+  });
+
+  // ---- per-speaker lanes ----
+  const perEl = document.getElementById('lanes-per-speaker');
+  const laneScrubbers = [];
+  for (const p of PARTICIPANTS) {
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-[110px_1fr_60px] items-center gap-3';
+    const lane = document.createElement('div');
+    lane.className = 'timeline-track';
+    if (isAudioOff(p)) lane.style.opacity = '0.25';
+    for (const seg of audioByPart[p.speaker] || []) {
+      const left = (seg.start / AUDIO_WINDOW) * 100;
+      const w = ((seg.end - seg.start) / AUDIO_WINDOW) * 100;
+      const el = document.createElement('span');
+      el.className = 'seg';
+      el.style.left = `${left}%`;
+      el.style.width = `${Math.max(w, 0.05)}%`;
+      el.style.background = p.color;
+      lane.appendChild(el);
+    }
+    const lscr = document.createElement('div');
+    lscr.className = 'scrubber';
+    lscr.style.left = '0%';
+    lane.appendChild(lscr);
+    laneScrubbers.push(lscr);
+    if (!isAudioOff(p)) lane.addEventListener('click', (e) => {
+      const r = lane.getBoundingClientRect();
+      const pct = (e.clientX - r.left) / r.width;
+      panorama.currentTime = Math.max(0, Math.min(VIDEO_DUR, pct * VIDEO_DUR));
+    });
+
+    row.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span class="h-2.5 w-2.5 rounded-sm" style="background:${p.color}"></span>
+        <span class="text-xs ${isAudioOff(p) ? 'text-white/40' : ''}">${p.id} · ${p.name}${isAudioOff(p) ? ' · no audio' : ''}</span>
+      </div>
+    `;
+    row.appendChild(lane);
+    const meta = document.createElement('span');
+    meta.className = 'text-right text-[11px] text-white/55 font-mono tabular-nums';
+    meta.textContent = isAudioOff(p) ? '—' : `${partStats[p.speaker].pct.toFixed(1)}%`;
+    row.appendChild(meta);
+    perEl.appendChild(row);
+  }
+
+  // ---- per-participant transcript turns (deduped by build_audio_data.py) ----
+  const transcriptByPart = {};
+  for (const p of PARTICIPANTS) transcriptByPart[p.speaker] = [];
+  for (const t of (A.transcript || [])) {
+    if (transcriptByPart[t.speaker] !== undefined) {
+      transcriptByPart[t.speaker].push(t);
+    }
+  }
+
+  // ---- 4 participant cards ----
+  const cardsEl = document.getElementById('cards');
+  const cardEls = {};
+  const cropAspect = '640/900';
+  for (const p of PARTICIPANTS) {
+    const audioOff = isAudioOff(p);
+    const videoOff = isVideoOff(p);
+
+    const card = document.createElement('div');
+    card.className = 'overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] flex flex-col';
+    card.style.setProperty('--c', p.color);
+    card.dataset.pid = p.id;
+
+    const turns = transcriptByPart[p.speaker] || [];
+    const transcriptHtml = audioOff
+      ? '<div class="text-white/30 italic">channel not recorded</div>'
+      : (turns.length === 0
+          ? `<div class="text-white/40 italic">No utterances kept after dedupe (mic bleed only).</div>`
+          : turns.map((t, i) =>
+              `<div class="transcript-turn px-1 py-0.5 rounded transition" data-turn data-start="${t.start}" data-end="${t.end}" data-i="${i}">
+                <span class="font-mono text-[10px] text-white/35 tabular-nums">${fmt(t.start)}</span>
+                <span class="ml-1.5">${escapeHtml(t.text)}</span>
+              </div>`
+            ).join(''));
+
+    card.innerHTML = `
+      <!-- video / placeholder -->
+      <div class="relative bg-ink-900" style="aspect-ratio:${cropAspect}">
+        ${videoOff ? `
+          <div class="absolute inset-0 grid place-items-center text-center p-4">
+            <div>
+              <div class="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-white/[0.05]">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l22 22"/><circle cx="12" cy="12" r="9"/></svg>
+              </div>
+              <div class="text-xs font-medium text-white/70">${p.id} · ${p.name}</div>
+              <div class="mt-1 text-[10px] text-white/40 px-2">no video for slot ${p.slot}</div>
+            </div>
+          </div>
+        ` : `
+          <video data-crop muted playsinline preload="metadata"></video>
+          <div class="absolute left-2 top-2 z-10 flex items-center gap-1.5">
+            <span class="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style="background:${p.color};color:white">${p.id}</span>
+            <span class="rounded-md bg-black/50 px-1.5 py-0.5 text-[10px] backdrop-blur" data-state>${audioOff ? 'no audio' : '—'}</span>
+          </div>
+          ${audioOff ? '' : `<div class="absolute right-2 top-2 z-10 flex h-5 items-end gap-[2px]" data-wave>
+            <span class="bar w-[3px] rounded-sm" style="height:12px;background:${p.color}"></span>
+            <span class="bar w-[3px] rounded-sm" style="height:16px;background:${p.color}"></span>
+            <span class="bar w-[3px] rounded-sm" style="height:10px;background:${p.color}"></span>
+            <span class="bar w-[3px] rounded-sm" style="height:18px;background:${p.color}"></span>
+            <span class="bar w-[3px] rounded-sm" style="height:12px;background:${p.color}"></span>
+          </div>`}
+        `}
+      </div>
+
+      <!-- info ribbon -->
+      <div class="border-t border-white/[0.06] p-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="grid h-7 w-7 place-items-center rounded-full text-[11px] font-semibold" style="background:${p.color}33;color:${p.color}">${p.name[0]}</div>
+            <div>
+              <div class="text-sm font-medium leading-tight">${p.name}</div>
+              <div class="text-[10px] text-white/45">slot ${p.slot} · ${audioOff ? 'audio off' : p.speaker}</div>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="font-mono text-xs tabular-nums" data-talk>${audioOff ? '—' : (partStats[p.speaker].total_sec.toFixed(1) + 's')}</div>
+            <div class="text-[10px] text-white/40">${audioOff ? '' : 'talk time'}</div>
+          </div>
+        </div>
+
+        <!-- mini audio lane -->
+        <div class="mt-3 timeline-track" style="height:10px${audioOff ? ';opacity:0.25' : ''}" data-mini>
+          ${audioOff ? '' : (audioByPart[p.speaker] || []).map(seg => {
+            const left = (seg.start / AUDIO_WINDOW) * 100;
+            const w = ((seg.end - seg.start) / AUDIO_WINDOW) * 100;
+            return `<span class="seg" style="left:${left}%;width:${Math.max(w, 0.05)}%;background:${p.color}"></span>`;
+          }).join('')}
+          <div class="scrubber" data-mini-scrubber style="left:0%"></div>
+        </div>
+
+        <!-- behavior live readout -->
+        <div class="mt-3 grid grid-cols-3 gap-1.5 text-center">
+          <div class="rounded bg-white/[0.04] p-1.5"><div class="text-[9px] text-white/40">YAW</div><div class="font-mono text-xs tabular-nums" data-yaw>—</div></div>
+          <div class="rounded bg-white/[0.04] p-1.5"><div class="text-[9px] text-white/40">PITCH</div><div class="font-mono text-xs tabular-nums" data-pitch>—</div></div>
+          <div class="rounded bg-white/[0.04] p-1.5"><div class="text-[9px] text-white/40">SMILE</div><div class="font-mono text-xs tabular-nums" data-smile>—</div></div>
+        </div>
+
+        <!-- transcript -->
+        <div class="mt-3">
+          <div class="mb-1 flex items-center justify-between">
+            <span class="text-[10px] uppercase tracking-wider text-white/40">Transcript</span>
+            <span class="text-[10px] text-white/35" data-transcript-status>${audioOff ? 'no audio' : `${turns.length} utterances`}</span>
+          </div>
+          <div class="h-32 overflow-y-auto rounded-md border border-white/[0.06] bg-black/20 p-2 text-xs text-white/55 leading-relaxed scroll-smooth" data-transcript>
+            ${transcriptHtml}
+          </div>
+        </div>
+      </div>
+    `;
+    cardsEl.appendChild(card);
+    cardEls[p.id] = card;
+
+    // make turns clickable to seek
+    if (!audioOff) {
+      card.querySelectorAll('[data-turn]').forEach(el => {
+        el.addEventListener('click', () => {
+          panorama.currentTime = Math.max(0, Math.min(VIDEO_DUR, parseFloat(el.dataset.start)));
+        });
+      });
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ---- bind crop video elements ----
+  const cropEls = {};
+  for (const p of PARTICIPANTS) {
+    if (isVideoOff(p)) continue;
+    const v = cardEls[p.id].querySelector('video[data-crop]');
+    v.src = p.crop;
+    v.load();
+    cropEls[p.slot] = v;
+  }
+
+  // ---- nearest helpers ----
+  function nearest(rows, t) {
+    if (!rows || !rows.length) return null;
+    let lo = 0, hi = rows.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (rows[mid].t < t) lo = mid + 1; else hi = mid;
+    }
+    if (lo > 0 && Math.abs(rows[lo-1].t - t) < Math.abs(rows[lo].t - t)) lo -= 1;
+    return rows[lo];
+  }
+  function segAt(segs, t) {
+    if (!segs || !segs.length) return null;
+    for (const s of segs) {
+      if (t >= s.start && t < s.end) return s;
+    }
+    return null;
+  }
+
+  // ---- master clock: panorama drives crops + audio ----
+  const SYNC_TOL = 0.18;  // seconds
+  function syncFollowers() {
+    const t = panorama.currentTime;
+    for (const slot in cropEls) {
+      const cv = cropEls[slot];
+      if (Math.abs(cv.currentTime - t) > SYNC_TOL) cv.currentTime = t;
+      if (panorama.paused && !cv.paused) cv.pause();
+      if (!panorama.paused && cv.paused) cv.play().catch(() => {});
+    }
+    if (Math.abs(audio.currentTime - t) > SYNC_TOL) audio.currentTime = t;
+    if (panorama.paused && !audio.paused) audio.pause();
+    if (!panorama.paused && audio.paused) audio.play().catch(() => {});
+  }
+
+  function update() {
+    const t = panorama.currentTime;
+    const pct = (t / VIDEO_DUR) * 100;
+    document.getElementById('t-cur').textContent = fmt(t);
+    document.getElementById('hud-frame').textContent = `frame ${Math.round(t * V.video.fps)}`;
+    document.getElementById('seek').value = String(Math.round(pct * 10));
+
+    // bbox overlay
+    for (const p of PARTICIPANTS) {
+      if (isVideoOff(p)) continue;
+      const tr = nearest(V.tracks[String(p.slot)], t);
+      const box = boxEls[p.slot];
+      if (tr) {
+        box.style.left = `${tr.x1 * 100}%`;
+        box.style.top = `${tr.y1 * 100}%`;
+        box.style.width = `${(tr.x2 - tr.x1) * 100}%`;
+        box.style.height = `${(tr.y2 - tr.y1) * 100}%`;
+        box.style.opacity = '1';
+        box.querySelector('[data-conf]').textContent = tr.conf.toFixed(2);
+      } else {
+        box.style.opacity = '0.2';
+      }
+    }
+
+    // scrubbers
+    document.getElementById('scr-combined').style.left = `${pct}%`;
+    laneScrubbers.forEach(s => s.style.left = `${pct}%`);
+
+    // current speaker
+    const currentSeg = segAt(allSegsInWindow, t);
+    const currentSpk = currentSeg && currentSeg.speaker !== 'silence' ? currentSeg.speaker : null;
+
+    // per-card live updates
+    for (const p of PARTICIPANTS) {
+      const card = cardEls[p.id];
+      const miniScr = card.querySelector('[data-mini-scrubber]');
+      if (miniScr) miniScr.style.left = `${pct}%`;
+
+      // behaviors (video-derived; available for all 4 since slot 1 now has video)
+      if (!isVideoOff(p)) {
+        const bh = nearest(V.behaviors[String(p.slot)], t);
+        if (bh) {
+          card.querySelector('[data-yaw]').textContent = bh.yaw == null ? '—' : bh.yaw.toFixed(2);
+          card.querySelector('[data-pitch]').textContent = bh.pitch == null ? '—' : bh.pitch.toFixed(2);
+          card.querySelector('[data-smile]').textContent = bh.smile.toFixed(2);
+        }
+
+        // speaking state (audio-derived; P4 stays "no audio")
+        const stateEl = card.querySelector('[data-state]');
+        if (isAudioOff(p)) {
+          card.classList.remove('card-speaking');
+          if (stateEl) {
+            if (bh && bh.turn_left) { stateEl.textContent = 'turn ←'; stateEl.style.color = '#60A5FA'; }
+            else if (bh && bh.turn_right) { stateEl.textContent = 'turn →'; stateEl.style.color = '#60A5FA'; }
+            else if (bh && bh.notes) { stateEl.textContent = 'note-taking'; stateEl.style.color = '#34D399'; }
+            else { stateEl.textContent = 'no audio'; stateEl.style.color = 'rgba(255,255,255,0.5)'; }
+          }
+        } else {
+          const isSpeaking = currentSpk === p.speaker;
+          if (isSpeaking) {
+            card.classList.add('card-speaking');
+            if (stateEl) { stateEl.textContent = 'speaking'; stateEl.style.color = p.color; }
+          } else {
+            card.classList.remove('card-speaking');
+            if (stateEl) {
+              if (bh && bh.notes) { stateEl.textContent = 'note-taking'; stateEl.style.color = '#34D399'; }
+              else if (bh && bh.turn_left) { stateEl.textContent = 'turn ←'; stateEl.style.color = '#60A5FA'; }
+              else if (bh && bh.turn_right) { stateEl.textContent = 'turn →'; stateEl.style.color = '#60A5FA'; }
+              else { stateEl.textContent = 'listening'; stateEl.style.color = 'rgba(255,255,255,0.6)'; }
+            }
+          }
+        }
+      }
+
+      // active transcript turn highlight + auto-scroll
+      if (!isAudioOff(p)) {
+        const turns = transcriptByPart[p.speaker] || [];
+        const turnsEls = card.querySelectorAll('[data-turn]');
+        let activeIdx = -1;
+        for (let i = 0; i < turns.length; i++) {
+          if (t >= turns[i].start && t < turns[i].end) { activeIdx = i; break; }
+        }
+        turnsEls.forEach((el, i) => {
+          const isActive = i === activeIdx;
+          if (isActive) {
+            el.style.background = `${p.color}22`;
+            el.style.color = 'white';
+            // gently scroll into view if outside
+            const parent = el.parentElement;
+            const er = el.getBoundingClientRect();
+            const pr = parent.getBoundingClientRect();
+            if (er.top < pr.top || er.bottom > pr.bottom) {
+              parent.scrollTop = el.offsetTop - parent.offsetTop - 8;
+            }
+          } else {
+            el.style.background = '';
+            el.style.color = '';
+          }
+        });
+      }
+    }
+
+    // state pill
+    const dot = document.getElementById('state-dot');
+    const txt = document.getElementById('state-text');
+    if (currentSpk) {
+      dot.style.background = participantBySpeaker[currentSpk]?.color || '#EC4899';
+      txt.textContent = `${participantBySpeaker[currentSpk]?.name || currentSpk} speaking`;
+    } else {
+      dot.style.background = '#34D399';
+      txt.textContent = 'silence';
+    }
+  }
+
+  // ---- raf loop ----
+  let raf;
+  function tick() {
+    syncFollowers();
+    update();
+    if (!panorama.paused && !panorama.ended) raf = requestAnimationFrame(tick);
+  }
+
+  panorama.addEventListener('play', () => {
+    document.body.classList.add('playing');
+    document.getElementById('ic-play').classList.add('hidden');
+    document.getElementById('ic-pause').classList.remove('hidden');
+    syncFollowers();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
+  });
+  panorama.addEventListener('pause', () => {
+    document.body.classList.remove('playing');
+    document.getElementById('ic-play').classList.remove('hidden');
+    document.getElementById('ic-pause').classList.add('hidden');
+    cancelAnimationFrame(raf);
+    syncFollowers();
+    update();
+  });
+  panorama.addEventListener('seeked', () => { syncFollowers(); update(); });
+  panorama.addEventListener('loadedmetadata', () => { update(); });
+  panorama.addEventListener('ended', () => {
+    document.body.classList.remove('playing');
+    document.getElementById('ic-play').classList.remove('hidden');
+    document.getElementById('ic-pause').classList.add('hidden');
+    audio.pause();
+    for (const slot in cropEls) cropEls[slot].pause();
+  });
+
+  // ---- transport ----
+  document.getElementById('btn-play').addEventListener('click', () => {
+    if (document.body.dataset.state !== 'active') return activate();
+    if (panorama.paused) panorama.play(); else panorama.pause();
+  });
+  document.getElementById('btn-prev').addEventListener('click', () => { panorama.currentTime = Math.max(0, panorama.currentTime - 1); });
+  document.getElementById('btn-next').addEventListener('click', () => { panorama.currentTime = Math.min(VIDEO_DUR, panorama.currentTime + 1); });
+  document.getElementById('seek').addEventListener('input', (e) => {
+    panorama.currentTime = (parseInt(e.target.value, 10) / 1000) * VIDEO_DUR;
+  });
+  document.getElementById('btn-mute').addEventListener('click', () => {
+    audio.muted = !audio.muted;
+    document.getElementById('ic-vol').classList.toggle('hidden', audio.muted);
+    document.getElementById('ic-mute').classList.toggle('hidden', !audio.muted);
+  });
+  const rates = [1, 1.25, 1.5, 2, 0.5];
+  let rIdx = 0;
+  document.getElementById('btn-rate').addEventListener('click', (e) => {
+    rIdx = (rIdx + 1) % rates.length;
+    panorama.playbackRate = rates[rIdx];
+    audio.playbackRate = rates[rIdx];
+    for (const slot in cropEls) cropEls[slot].playbackRate = rates[rIdx];
+    e.currentTarget.textContent = `${rates[rIdx]}×`;
+  });
+
+  // ---- activation flow ----
+  function activate(panoramaSrc) {
+    panorama.src = panoramaSrc || V.video.src;
+    panorama.load();
+    document.body.dataset.state = 'active';
+    document.getElementById('btn-reset').classList.remove('hidden');
+    document.getElementById('btn-upload').classList.add('hidden');
+    document.getElementById('title').textContent = `Lab session · panorama 1920×360 · ${VIDEO_DUR.toFixed(1)}s + 5 min audio`;
+    panorama.play().catch(() => {/* user gesture sometimes still required, ignore */});
+  }
+
+  function reset() {
+    panorama.pause();
+    audio.pause();
+    for (const slot in cropEls) cropEls[slot].pause();
+    panorama.removeAttribute('src');
+    panorama.load();
+    document.body.dataset.state = 'idle';
+    document.getElementById('btn-reset').classList.add('hidden');
+    document.getElementById('btn-upload').classList.remove('hidden');
+    document.getElementById('title').textContent = 'Upload a 360° panorama to begin';
+  }
+
+  document.getElementById('btn-upload').addEventListener('click', () => {
+    document.getElementById('file-input').click();
+  });
+  document.getElementById('btn-demo').addEventListener('click', () => activate());
+  document.getElementById('btn-reset').addEventListener('click', reset);
+  document.getElementById('file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    activate(URL.createObjectURL(file));
+  });
+
+  // drag & drop
+  const stage = document.getElementById('stage');
+  stage.addEventListener('click', (e) => {
+    if (document.body.dataset.state === 'idle' && e.target.closest('#btn-demo') == null) {
+      document.getElementById('file-input').click();
+    }
+  });
+  ['dragenter', 'dragover'].forEach(ev => stage.addEventListener(ev, (e) => {
+    if (document.body.dataset.state !== 'idle') return;
+    e.preventDefault();
+    stage.classList.add('dragover');
+  }));
+  ['dragleave', 'drop'].forEach(ev => stage.addEventListener(ev, (e) => {
+    e.preventDefault();
+    stage.classList.remove('dragover');
+  }));
+  stage.addEventListener('drop', (e) => {
+    if (document.body.dataset.state !== 'idle') return;
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    activate(URL.createObjectURL(file));
+  });
+
+  // keyboard
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (document.body.dataset.state !== 'active') return;
+    if (e.code === 'Space') { e.preventDefault(); panorama.paused ? panorama.play() : panorama.pause(); }
+    if (e.code === 'ArrowLeft') panorama.currentTime = Math.max(0, panorama.currentTime - 1);
+    if (e.code === 'ArrowRight') panorama.currentTime = Math.min(VIDEO_DUR, panorama.currentTime + 1);
+    if (e.code === 'KeyM') document.getElementById('btn-mute').click();
+  });
+
+  // ============ SENTIMENT CIRCUMPLEX ============
+  // The 12 fine-label anchors (must match sentiment.py FINE_LABELS).
+  // SVG y is inverted vs Russell's plot — we flip it when drawing so +arousal is up.
+  const FINE_ANCHORS = [
+    {l: 'delighted',  v: +0.71, a: +0.71},
+    {l: 'glad',       v: +0.92, a: +0.38},
+    {l: 'pleased',    v: +0.92, a: -0.38},
+    {l: 'satisfied',  v: +0.71, a: -0.71},
+    {l: 'calm',       v: +0.38, a: -0.92},
+    {l: 'content',    v:  0.00, a: -0.00},
+    {l: 'miserable',  v: -0.38, a: -0.92},
+    {l: 'bored',      v: -0.71, a: -0.71},
+    {l: 'tired',      v: -0.92, a: -0.38},
+    {l: 'depressed',  v: -0.92, a: +0.00},
+    {l: 'frustrated', v: -0.92, a: +0.38},
+    {l: 'annoyed',    v: -0.71, a: +0.71},
+    {l: 'alarmed',    v: -0.38, a: +0.92},
+  ];
+  const QUAD_INFO = {
+    Q1: {color: '#FBBF24', label: 'joyful'},
+    Q2: {color: '#F87171', label: 'angry'},
+    Q3: {color: '#A78BFA', label: 'depressed'},
+    Q4: {color: '#34D399', label: 'content'},
+  };
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const cxSvg = document.getElementById('cx-svg');
+  const cxFineLabelsG = document.getElementById('cx-fine-labels');
+  const cxQuadLabelsG = document.getElementById('cx-quad-labels');
+  const cxDotsG = document.getElementById('cx-dots');
+  const cxCentroidsG = document.getElementById('cx-centroids');
+  const cxHover = document.getElementById('cx-hover');
+  const cxStretchInput = document.getElementById('cx-stretch');
+  const cxStretchBadge = document.getElementById('cx-stretch-badge');
+  const cxLabelsInput = document.getElementById('cx-show-labels');
+  const cxList = document.getElementById('cx-centroid-list');
+  const cxHist = document.getElementById('cx-quad-hist');
+
+  // hide whole section if no sentiment data
+  if (!A.stats?.has_sentiment) {
+    document.getElementById('circumplex-section').style.display = 'none';
+  } else {
+    // ---- fine label guides (faint text near each of the 13 anchors) ----
+    for (const f of FINE_ANCHORS) {
+      const text = document.createElementNS(SVG_NS, 'text');
+      // place label slightly outside the unit circle at the anchor's direction
+      const r = Math.hypot(f.v, f.a) || 0.001;
+      const scale = (r + 0.07) / r;  // push outward
+      text.setAttribute('x', (f.v * scale).toFixed(3));
+      text.setAttribute('y', (-f.a * scale + 0.02).toFixed(3));   // SVG y flip
+      text.textContent = f.l;
+      cxFineLabelsG.appendChild(text);
+    }
+
+    // ---- transform: optional sigmoid stretch ----
+    const stretch = (x, k = 2.5) => Math.tanh(x * k);
+    function txform(v, a) {
+      if (cxStretchInput.checked) return [stretch(v), stretch(a)];
+      return [v, a];
+    }
+
+    // ---- collect utterances with sentiment, indexed by transcript position ----
+    const uttsBySpeaker = {};
+    const utts = [];
+    for (let i = 0; i < (A.transcript || []).length; i++) {
+      const t = A.transcript[i];
+      if (!t.sentiment) continue;
+      utts.push({...t, _idx: i});
+      (uttsBySpeaker[t.speaker] = uttsBySpeaker[t.speaker] || []).push(utts[utts.length - 1]);
+    }
+
+    // ---- speaker color helper (already exists higher up via spkColor) ----
+
+    // ---- render dots ----
+    const dotEls = [];
+    function renderDots() {
+      cxDotsG.innerHTML = '';
+      dotEls.length = 0;
+      for (const u of utts) {
+        const [tv, ta] = txform(u.sentiment.v, u.sentiment.a);
+        const c = document.createElementNS(SVG_NS, 'circle');
+        c.setAttribute('cx', tv.toFixed(4));
+        c.setAttribute('cy', (-ta).toFixed(4));   // y flip
+        c.setAttribute('r', '0.030');
+        c.setAttribute('fill', spkColor(u.speaker));
+        c.setAttribute('fill-opacity', '0.85');
+        c.setAttribute('stroke', 'white');
+        c.setAttribute('stroke-width', '0.006');
+        c.setAttribute('stroke-opacity', '0.4');
+        c.style.cursor = 'pointer';
+        c.dataset.idx = String(u._idx);
+        c.dataset.start = String(u.start);
+        c.addEventListener('mouseenter', () => showHover(u));
+        c.addEventListener('mouseleave', () => clearHover());
+        c.addEventListener('click', () => { panorama.currentTime = Math.max(0, Math.min(VIDEO_DUR, u.start)); });
+        cxDotsG.appendChild(c);
+        dotEls.push(c);
+      }
+    }
+
+    function renderCentroids() {
+      cxCentroidsG.innerHTML = '';
+      for (const sp of A.speakers) {
+        const s = sp.sentiment;
+        if (!s || !s.n) continue;
+        const [tv, ta] = txform(s.v_mean, s.a_mean);
+        // outer halo
+        const halo = document.createElementNS(SVG_NS, 'circle');
+        halo.setAttribute('cx', tv.toFixed(4));
+        halo.setAttribute('cy', (-ta).toFixed(4));
+        halo.setAttribute('r', '0.075');
+        halo.setAttribute('fill', sp.color);
+        halo.setAttribute('fill-opacity', '0.18');
+        cxCentroidsG.appendChild(halo);
+        // core
+        const core = document.createElementNS(SVG_NS, 'circle');
+        core.setAttribute('cx', tv.toFixed(4));
+        core.setAttribute('cy', (-ta).toFixed(4));
+        core.setAttribute('r', '0.04');
+        core.setAttribute('fill', sp.color);
+        core.setAttribute('stroke', 'white');
+        core.setAttribute('stroke-width', '0.012');
+        cxCentroidsG.appendChild(core);
+        // label
+        const lab = document.createElementNS(SVG_NS, 'text');
+        lab.setAttribute('x', (tv + 0.06).toFixed(4));
+        lab.setAttribute('y', (-ta + 0.02).toFixed(4));
+        lab.setAttribute('font-family', 'Inter');
+        lab.setAttribute('font-size', '0.075');
+        lab.setAttribute('font-weight', '600');
+        lab.setAttribute('fill', sp.color);
+        lab.textContent = sp.id;
+        cxCentroidsG.appendChild(lab);
+      }
+    }
+
+    function showHover(u) {
+      const s = u.sentiment;
+      const sp = A.speakers.find(x => x.id === u.speaker);
+      const qInfo = QUAD_INFO[s.label_4] || {color:'#999', label:'?'};
+      const tStr = `${Math.floor(u.start/60)}:${String(Math.floor(u.start%60)).padStart(2,'0')}`;
+      cxHover.innerHTML = `
+        <div class="not-italic text-white">${escapeHtml(u.text)}</div>
+        <div class="mt-1.5 flex flex-wrap gap-2 text-[11px] text-white/50">
+          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm" style="background:${sp?.color || '#999'}"></span>${u.speaker} · ${tStr}</span>
+          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm" style="background:${qInfo.color}"></span>${s.label_4} ${qInfo.label} → <b class="text-white/80">${s.label_12}</b></span>
+          <span class="font-mono">V${s.v >= 0 ? '+' : ''}${s.v.toFixed(2)} · A${s.a >= 0 ? '+' : ''}${s.a.toFixed(2)}</span>
+          <span class="text-white/40">${s.top_emotion} ${(s.conf*100).toFixed(0)}%</span>
+        </div>`;
+    }
+    function clearHover() {
+      cxHover.innerHTML = `<span class="italic">hover any dot to inspect</span>`;
+    }
+
+    // ---- centroid list (right column) ----
+    function renderCentroidList() {
+      cxList.innerHTML = '';
+      for (const sp of A.speakers) {
+        const s = sp.sentiment;
+        const li = document.createElement('li');
+        li.className = 'rounded-md bg-white/[0.03] px-2.5 py-1.5';
+        if (!s || !s.n) {
+          li.innerHTML = `<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-sm" style="background:${sp.color}"></span><span class="text-white/55">${sp.id} · ${sp.name}</span><span class="ml-auto text-white/35">no utterances</span></div>`;
+        } else {
+          const qInfo = QUAD_INFO[Object.keys(QUAD_INFO).find(q => s[q] === Math.max(s.Q1,s.Q2,s.Q3,s.Q4)) || 'Q4'];
+          li.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="h-2 w-2 rounded-sm" style="background:${sp.color}"></span>
+              <span class="font-medium">${sp.id} · ${sp.name}</span>
+              <span class="ml-auto font-mono text-white/55">V${s.v_mean >= 0 ? '+' : ''}${s.v_mean.toFixed(2)} A${s.a_mean >= 0 ? '+' : ''}${s.a_mean.toFixed(2)}</span>
+            </div>
+            <div class="mt-0.5 text-[11px] text-white/45">mostly <b style="color:${qInfo.color}">${s.dominant_label}</b> · ${s.n} utterances</div>`;
+        }
+        cxList.appendChild(li);
+      }
+    }
+
+    // ---- session quadrant histogram ----
+    function renderHist() {
+      cxHist.innerHTML = '';
+      const tot = A.stats.sentiment_totals || {Q1:0,Q2:0,Q3:0,Q4:0,n:0};
+      const N = tot.n || 1;
+      for (const q of ['Q1','Q2','Q3','Q4']) {
+        const n = tot[q] || 0;
+        const pct = (100 * n / N);
+        const li = document.createElement('li');
+        const info = QUAD_INFO[q];
+        li.innerHTML = `
+          <div class="flex items-center justify-between"><span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm" style="background:${info.color}"></span>${q} ${info.label}</span><span class="text-white/55 font-mono tabular-nums">${n} · ${pct.toFixed(0)}%</span></div>
+          <div class="mt-1 h-1 rounded-full bg-white/[0.06]"><div class="h-1 rounded-full" style="width:${pct}%;background:${info.color}"></div></div>`;
+        cxHist.appendChild(li);
+      }
+    }
+
+    function redraw() {
+      renderDots();
+      renderCentroids();
+      cxStretchBadge.classList.toggle('hidden', !cxStretchInput.checked);
+    }
+    cxStretchInput.addEventListener('change', redraw);
+    cxLabelsInput.addEventListener('change', () => {
+      cxQuadLabelsG.style.display = cxLabelsInput.checked ? '' : 'none';
+      cxFineLabelsG.style.display = cxLabelsInput.checked ? '' : 'none';
+    });
+
+    redraw();
+    renderCentroidList();
+    renderHist();
+
+    // ---- pulse the dot whose utterance contains current panorama time ----
+    let lastActiveIdx = -1;
+    function tickCircumplex() {
+      const t = panorama.currentTime;
+      let activeIdx = -1;
+      for (const u of utts) {
+        if (t >= u.start && t < u.end) { activeIdx = u._idx; break; }
+      }
+      if (activeIdx === lastActiveIdx) return;
+      lastActiveIdx = activeIdx;
+      for (const el of dotEls) {
+        const isAct = parseInt(el.dataset.idx, 10) === activeIdx;
+        el.setAttribute('r', isAct ? '0.05' : '0.030');
+        el.setAttribute('stroke-opacity', isAct ? '1' : '0.4');
+        el.setAttribute('stroke-width', isAct ? '0.012' : '0.006');
+      }
+    }
+    panorama.addEventListener('timeupdate', tickCircumplex);
+    panorama.addEventListener('seeked', tickCircumplex);
+  }
+})();
+</script>
+</body>
+</html>

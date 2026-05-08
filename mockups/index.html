@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video360 — Interactive Player</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui'] },
+        colors: {
+          ink: { 950: '#0F172A', 900: '#111827', 800: '#1E293B', 700: '#201A32' },
+          brand: { DEFAULT: '#EC4899', 600: '#DB2777' },
+          beam:  { DEFAULT: '#2563EB', 400: '#60A5FA' },
+        },
+        boxShadow: {
+          glow: '0 0 24px rgba(236,72,153,0.35)',
+        },
+      },
+    },
+  };
+</script>
+<style>
+  html, body { background: #0F172A; }
+  body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  *:focus-visible { outline: 2px solid #EC4899; outline-offset: 2px; border-radius: 4px; }
+  /* faux 360 frame: equirectangular gradient + soft vignettes */
+  .stage {
+    background:
+      radial-gradient(60% 90% at 25% 40%, rgba(96,165,250,0.18), transparent 60%),
+      radial-gradient(50% 80% at 75% 60%, rgba(236,72,153,0.18), transparent 60%),
+      radial-gradient(40% 60% at 50% 110%, rgba(255,255,255,0.06), transparent 60%),
+      linear-gradient(180deg, #0B1220 0%, #14182A 100%);
+  }
+  .scanline::after{
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background: repeating-linear-gradient(180deg, rgba(255,255,255,0.025) 0 2px, transparent 2px 4px);
+    mix-blend-mode: overlay;
+  }
+  .timeline-track {
+    background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.06));
+  }
+  /* speaker waveform bars */
+  @keyframes pulse-bar {
+    0%, 100% { transform: scaleY(0.35); }
+    50%      { transform: scaleY(1); }
+  }
+  .bar { transform-origin: 50% 100%; animation: pulse-bar 1.2s ease-in-out infinite; }
+  .bar:nth-child(2){ animation-delay: .1s }
+  .bar:nth-child(3){ animation-delay: .2s }
+  .bar:nth-child(4){ animation-delay: .3s }
+  .bar:nth-child(5){ animation-delay: .4s }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bar { animation: none; }
+  }
+
+  /* detection box pulse */
+  @keyframes ring {
+    0% { box-shadow: 0 0 0 0 rgba(236,72,153,0.55); }
+    100% { box-shadow: 0 0 0 14px rgba(236,72,153,0); }
+  }
+  .ring-pulse { animation: ring 1.6s ease-out infinite; }
+
+  /* donut */
+  .donut {
+    background: conic-gradient(
+      #EC4899 0 28%,
+      #2563EB 28% 52%,
+      #60A5FA 52% 74%,
+      #A78BFA 74% 88%,
+      #1E293B 88% 100%
+    );
+  }
+</style>
+</head>
+<body class="text-white">
+
+<!-- ============ TOP NAV ============ -->
+<header class="sticky top-0 z-30 border-b border-white/[0.06] bg-ink-950/85 backdrop-blur">
+  <div class="mx-auto flex h-14 max-w-[1440px] items-center gap-6 px-5">
+    <a href="#" class="flex items-center gap-2 cursor-pointer">
+      <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand text-white shadow-glow">
+        <!-- camera/360 mark -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 12c3-5 15-5 18 0"/><path d="M3 12c3 5 15 5 18 0"/></svg>
+      </span>
+      <span class="font-semibold tracking-tight">Video360</span>
+      <span class="ml-2 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-white/60">beta</span>
+    </a>
+
+    <nav class="hidden items-center gap-1 text-sm md:flex">
+      <a href="#" class="rounded-md bg-white/[0.06] px-3 py-1.5 text-white cursor-pointer transition hover:bg-white/[0.1]">Player</a>
+      <a href="#" class="rounded-md px-3 py-1.5 text-white/70 cursor-pointer transition hover:text-white hover:bg-white/[0.06]">Sessions</a>
+      <a href="#" class="rounded-md px-3 py-1.5 text-white/70 cursor-pointer transition hover:text-white hover:bg-white/[0.06]">Insights</a>
+      <a href="#" class="rounded-md px-3 py-1.5 text-white/70 cursor-pointer transition hover:text-white hover:bg-white/[0.06]">Export</a>
+    </nav>
+
+    <div class="ml-auto flex items-center gap-2">
+      <div class="hidden items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-white/70 md:flex">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <span>Search session…</span>
+        <kbd class="rounded border border-white/10 bg-white/[0.05] px-1 text-[10px]">⌘K</kbd>
+      </div>
+      <button class="grid h-9 w-9 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-white/80 transition hover:bg-white/[0.08] cursor-pointer" aria-label="Notifications">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      </button>
+      <div class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-brand to-beam text-xs font-semibold cursor-pointer">ZQ</div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ MAIN GRID ============ -->
+<main class="mx-auto max-w-[1440px] px-5 py-6">
+  <!-- title strip -->
+  <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <div class="text-[11px] uppercase tracking-widest text-white/40">Session</div>
+      <h1 class="mt-1 text-2xl font-semibold tracking-tight md:text-[28px]">
+        Lab Meeting · 2026-05-06 · <span class="text-white/50">output_top.mp4</span>
+      </h1>
+      <div class="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-white/60">
+        <span class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> Processed</span>
+        <span class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">4 participants</span>
+        <span class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">18:21 duration</span>
+        <span class="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">YOLOv8 · DeepFace · pyannote</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/80 transition hover:bg-white/[0.08] cursor-pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        Export
+      </button>
+      <button class="flex items-center gap-2 rounded-md bg-brand px-3 py-2 text-sm font-medium text-white shadow-glow transition hover:bg-brand-600 cursor-pointer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        New session
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-12 gap-5">
+    <!-- ============ LEFT: Participants ============ -->
+    <aside class="col-span-12 lg:col-span-3 order-2 lg:order-1">
+      <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-sm font-semibold tracking-tight">Participants</h2>
+          <span class="text-[11px] text-white/40">4 detected</span>
+        </div>
+
+        <ul class="space-y-2">
+          <!-- active speaker -->
+          <li class="group cursor-pointer rounded-xl border border-brand/40 bg-gradient-to-br from-brand/10 to-transparent p-3 transition hover:border-brand/60">
+            <div class="flex items-center gap-3">
+              <div class="relative">
+                <div class="grid h-10 w-10 place-items-center rounded-full bg-brand/20 text-sm font-semibold text-white">A</div>
+                <span class="absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-brand ring-2 ring-ink-950">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v8"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 18v4"/></svg>
+                </span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between">
+                  <p class="truncate text-sm font-medium">Alex</p>
+                  <span class="text-[11px] text-brand">speaking</span>
+                </div>
+                <div class="mt-0.5 flex items-center gap-2 text-[11px] text-white/50">
+                  <span>3:21</span>
+                  <span class="h-1 w-1 rounded-full bg-white/20"></span>
+                  <span>head: forward</span>
+                </div>
+              </div>
+              <!-- live waveform -->
+              <div class="flex h-7 items-end gap-[2px]">
+                <span class="bar w-[3px] rounded-sm bg-brand" style="height:18px"></span>
+                <span class="bar w-[3px] rounded-sm bg-brand" style="height:22px"></span>
+                <span class="bar w-[3px] rounded-sm bg-brand" style="height:14px"></span>
+                <span class="bar w-[3px] rounded-sm bg-brand" style="height:24px"></span>
+                <span class="bar w-[3px] rounded-sm bg-brand" style="height:16px"></span>
+              </div>
+            </div>
+          </li>
+
+          <li class="group cursor-pointer rounded-xl border border-white/[0.06] p-3 transition hover:bg-white/[0.04]">
+            <div class="flex items-center gap-3">
+              <div class="grid h-10 w-10 place-items-center rounded-full bg-beam/20 text-sm font-semibold">M</div>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium">Maya</p>
+                <div class="mt-0.5 flex items-center gap-2 text-[11px] text-white/50">
+                  <span>1:45</span>
+                  <span class="h-1 w-1 rounded-full bg-white/20"></span>
+                  <span>head: left</span>
+                </div>
+              </div>
+              <span class="text-[11px] text-white/40">listening</span>
+            </div>
+          </li>
+
+          <li class="group cursor-pointer rounded-xl border border-white/[0.06] p-3 transition hover:bg-white/[0.04]">
+            <div class="flex items-center gap-3">
+              <div class="grid h-10 w-10 place-items-center rounded-full bg-violet-500/20 text-sm font-semibold">S</div>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium">Sam</p>
+                <div class="mt-0.5 flex items-center gap-2 text-[11px] text-white/50">
+                  <span>0:52</span>
+                  <span class="h-1 w-1 rounded-full bg-white/20"></span>
+                  <span>note-taking</span>
+                </div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white/40"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </div>
+          </li>
+
+          <li class="group cursor-pointer rounded-xl border border-white/[0.06] p-3 transition hover:bg-white/[0.04]">
+            <div class="flex items-center gap-3">
+              <div class="grid h-10 w-10 place-items-center rounded-full bg-emerald-500/20 text-sm font-semibold">J</div>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium">Jordan</p>
+                <div class="mt-0.5 flex items-center gap-2 text-[11px] text-white/50">
+                  <span>2:08</span>
+                  <span class="h-1 w-1 rounded-full bg-white/20"></span>
+                  <span>head: right</span>
+                </div>
+              </div>
+              <span class="text-[11px] text-white/40">listening</span>
+            </div>
+          </li>
+        </ul>
+
+        <button class="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-white/15 px-3 py-2 text-xs text-white/60 transition hover:bg-white/[0.04] hover:text-white cursor-pointer">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          Add manual label
+        </button>
+      </div>
+
+      <!-- layer toggles -->
+      <div class="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+        <h3 class="text-sm font-semibold tracking-tight">Overlays</h3>
+        <p class="mt-0.5 text-[11px] text-white/40">Toggle what appears on the frame</p>
+        <div class="mt-3 space-y-2 text-sm">
+          <label class="flex items-center justify-between rounded-lg px-1 py-1.5 hover:bg-white/[0.04] cursor-pointer">
+            <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-sm bg-brand"></span>Detection boxes (YOLO)</span>
+            <span class="relative inline-flex h-5 w-9 items-center rounded-full bg-brand/80"><span class="ml-auto mr-0.5 h-4 w-4 rounded-full bg-white"></span></span>
+          </label>
+          <label class="flex items-center justify-between rounded-lg px-1 py-1.5 hover:bg-white/[0.04] cursor-pointer">
+            <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-sm bg-beam"></span>Head pose vectors</span>
+            <span class="relative inline-flex h-5 w-9 items-center rounded-full bg-beam/70"><span class="ml-auto mr-0.5 h-4 w-4 rounded-full bg-white"></span></span>
+          </label>
+          <label class="flex items-center justify-between rounded-lg px-1 py-1.5 hover:bg-white/[0.04] cursor-pointer">
+            <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-sm bg-violet-400"></span>Speaker labels</span>
+            <span class="relative inline-flex h-5 w-9 items-center rounded-full bg-violet-500/70"><span class="ml-auto mr-0.5 h-4 w-4 rounded-full bg-white"></span></span>
+          </label>
+          <label class="flex items-center justify-between rounded-lg px-1 py-1.5 hover:bg-white/[0.04] cursor-pointer">
+            <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-sm bg-emerald-400"></span>Note-taking events</span>
+            <span class="relative inline-flex h-5 w-9 items-center rounded-full bg-white/15"><span class="ml-0.5 h-4 w-4 rounded-full bg-white/60"></span></span>
+          </label>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ============ CENTER: Player ============ -->
+    <section class="col-span-12 lg:col-span-6 order-1 lg:order-2">
+      <div class="overflow-hidden rounded-2xl border border-white/[0.06] bg-ink-900">
+        <!-- stage -->
+        <div class="stage scanline relative aspect-[16/9] w-full overflow-hidden">
+          <!-- equirectangular hint label -->
+          <div class="absolute left-3 top-3 z-10 inline-flex items-center gap-2 rounded-md border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-white/70 backdrop-blur">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>
+            360° · equirectangular
+          </div>
+          <!-- live indicator -->
+          <div class="absolute right-3 top-3 z-10 inline-flex items-center gap-2 rounded-md border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-white/70 backdrop-blur">
+            <span class="relative flex h-2 w-2"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60"></span><span class="relative inline-flex h-2 w-2 rounded-full bg-brand"></span></span>
+            Frame 04612 / 33012
+          </div>
+
+          <!-- 4 detection boxes positioned over the gradient -->
+          <!-- P1 -->
+          <div class="absolute left-[18%] top-[28%] h-[34%] w-[16%]">
+            <div class="ring-pulse absolute inset-0 rounded-md border-2 border-brand/90 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.4)]"></div>
+            <div class="absolute -top-6 left-0 flex items-center gap-1.5 rounded-md bg-brand px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-white shadow">
+              <span>P1 · Alex</span>
+              <span class="opacity-80">0.94</span>
+            </div>
+            <!-- head pose arrow -->
+            <svg class="absolute left-1/2 top-[20%] -translate-x-1/2 text-beam" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+          </div>
+
+          <!-- P2 -->
+          <div class="absolute left-[60%] top-[34%] h-[28%] w-[14%]">
+            <div class="absolute inset-0 rounded-md border-2 border-white/40"></div>
+            <div class="absolute -top-6 left-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur">P2 · Maya · 0.88</div>
+            <svg class="absolute left-1/2 top-[20%] -translate-x-1/2 text-beam/80" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></svg>
+          </div>
+
+          <!-- P3 -->
+          <div class="absolute left-[40%] top-[55%] h-[24%] w-[12%]">
+            <div class="absolute inset-0 rounded-md border-2 border-violet-400/70"></div>
+            <div class="absolute -top-6 left-0 rounded-md bg-violet-500/30 px-1.5 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur">P3 · Sam · note-taking</div>
+          </div>
+
+          <!-- P4 -->
+          <div class="absolute right-[6%] top-[48%] h-[22%] w-[12%]">
+            <div class="absolute inset-0 rounded-md border-2 border-emerald-400/70"></div>
+            <div class="absolute -top-6 right-0 rounded-md bg-emerald-500/25 px-1.5 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur">P4 · Jordan · 0.81</div>
+          </div>
+
+          <!-- center play overlay -->
+          <button class="group absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer" aria-label="Play">
+            <span class="grid h-16 w-16 place-items-center rounded-full bg-white/10 backdrop-blur-sm transition group-hover:scale-105 group-hover:bg-white/15">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+            </span>
+          </button>
+        </div>
+
+        <!-- transport controls -->
+        <div class="border-t border-white/[0.06] px-4 py-3">
+          <div class="flex items-center gap-3">
+            <button class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Previous event">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/></svg>
+            </button>
+            <button class="grid h-10 w-10 place-items-center rounded-full bg-brand text-white shadow-glow transition hover:bg-brand-600 cursor-pointer" aria-label="Play / pause">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+            </button>
+            <button class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Next event">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></svg>
+            </button>
+
+            <div class="ml-1 font-mono text-xs tabular-nums text-white/70"><span class="text-white">02:34</span> <span class="text-white/30">/</span> 18:21</div>
+
+            <div class="ml-auto flex items-center gap-1">
+              <button class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Speed">
+                <span class="text-xs font-medium">1×</span>
+              </button>
+              <button class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="View">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+              <button class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </button>
+              <button class="grid h-9 w-9 place-items-center rounded-md text-white/70 hover:bg-white/[0.06] hover:text-white cursor-pointer" aria-label="Fullscreen">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V3h4"/><path d="M21 7V3h-4"/><path d="M3 17v4h4"/><path d="M21 17v4h-4"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TIMELINE -->
+      <div class="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold tracking-tight">Event timeline</h3>
+          <div class="flex items-center gap-3 text-[11px] text-white/50">
+            <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-brand"></span>Speaking</span>
+            <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-beam"></span>Head turn</span>
+            <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-emerald-400"></span>Note-taking</span>
+          </div>
+        </div>
+
+        <div class="mt-4 space-y-3">
+          <!-- per-participant lanes -->
+          <div class="grid grid-cols-[88px_1fr] items-center gap-3">
+            <span class="text-xs text-white/60">Alex</span>
+            <div class="relative h-3 rounded-full timeline-track">
+              <span class="absolute left-[5%] top-0 h-3 w-[12%] rounded-full bg-brand"></span>
+              <span class="absolute left-[22%] top-0 h-3 w-[6%]  rounded-full bg-brand"></span>
+              <span class="absolute left-[40%] top-0 h-3 w-[18%] rounded-full bg-brand"></span>
+              <span class="absolute left-[68%] top-0 h-3 w-[10%] rounded-full bg-brand"></span>
+              <span class="absolute left-[14%] top-0 h-3 w-[2px] rounded-full bg-beam"></span>
+              <span class="absolute left-[55%] top-0 h-3 w-[2px] rounded-full bg-beam"></span>
+            </div>
+          </div>
+          <div class="grid grid-cols-[88px_1fr] items-center gap-3">
+            <span class="text-xs text-white/60">Maya</span>
+            <div class="relative h-3 rounded-full timeline-track">
+              <span class="absolute left-[28%] top-0 h-3 w-[7%]  rounded-full bg-brand/70"></span>
+              <span class="absolute left-[60%] top-0 h-3 w-[5%]  rounded-full bg-brand/70"></span>
+              <span class="absolute left-[8%]  top-0 h-3 w-[2px] rounded-full bg-beam"></span>
+              <span class="absolute left-[75%] top-0 h-3 w-[2px] rounded-full bg-beam"></span>
+            </div>
+          </div>
+          <div class="grid grid-cols-[88px_1fr] items-center gap-3">
+            <span class="text-xs text-white/60">Sam</span>
+            <div class="relative h-3 rounded-full timeline-track">
+              <span class="absolute left-[12%] top-0 h-3 w-[3%]  rounded-full bg-brand/60"></span>
+              <span class="absolute left-[20%] top-0 h-3 w-[28%] rounded-full bg-emerald-400/50"></span>
+              <span class="absolute left-[60%] top-0 h-3 w-[22%] rounded-full bg-emerald-400/50"></span>
+            </div>
+          </div>
+          <div class="grid grid-cols-[88px_1fr] items-center gap-3">
+            <span class="text-xs text-white/60">Jordan</span>
+            <div class="relative h-3 rounded-full timeline-track">
+              <span class="absolute left-[35%] top-0 h-3 w-[10%] rounded-full bg-brand/70"></span>
+              <span class="absolute left-[80%] top-0 h-3 w-[8%]  rounded-full bg-brand/70"></span>
+              <span class="absolute left-[42%] top-0 h-3 w-[2px] rounded-full bg-beam"></span>
+            </div>
+          </div>
+
+          <!-- ruler + scrubber -->
+          <div class="relative mt-2 h-7">
+            <div class="absolute inset-x-0 top-3 h-px bg-white/10"></div>
+            <div class="absolute inset-x-0 top-0 grid grid-cols-9 text-[10px] text-white/40">
+              <span>0:00</span><span>2:00</span><span>4:00</span><span>6:00</span><span>8:00</span><span>10:00</span><span>12:00</span><span>14:00</span><span class="text-right">18:21</span>
+            </div>
+            <!-- scrubber head at ~14% (02:34/18:21) -->
+            <div class="absolute top-1.5 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-white bg-brand shadow-glow" style="left:14%"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RIGHT: Insights ============ -->
+    <aside class="col-span-12 lg:col-span-3 order-3">
+      <!-- KPIs -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <div class="text-[11px] uppercase tracking-widest text-white/40">Active speaker</div>
+          <div class="mt-1 text-lg font-semibold">Alex</div>
+          <div class="mt-1 text-[11px] text-white/50">since 02:21</div>
+        </div>
+        <div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+          <div class="text-[11px] uppercase tracking-widest text-white/40">Talk balance</div>
+          <div class="mt-1 text-lg font-semibold">0.42 <span class="text-xs text-white/40">gini</span></div>
+          <div class="mt-1 text-[11px] text-white/50">moderately uneven</div>
+        </div>
+      </div>
+
+      <!-- Speaking time donut -->
+      <div class="mt-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold tracking-tight">Speaking time</h3>
+          <span class="text-[11px] text-white/40">last 18 min</span>
+        </div>
+        <div class="mt-3 flex items-center gap-4">
+          <div class="relative h-[112px] w-[112px] shrink-0">
+            <div class="donut h-full w-full rounded-full"></div>
+            <div class="absolute inset-[14px] rounded-full bg-ink-950"></div>
+            <div class="absolute inset-0 grid place-items-center text-center">
+              <div>
+                <div class="font-mono text-base font-semibold tabular-nums">8:06</div>
+                <div class="text-[10px] uppercase tracking-wider text-white/40">total</div>
+              </div>
+            </div>
+          </div>
+          <ul class="flex-1 space-y-1.5 text-xs">
+            <li class="flex items-center justify-between"><span class="flex items-center gap-2"><span class="h-2 w-2 rounded-sm bg-brand"></span>Alex</span><span class="text-white/60">3:21</span></li>
+            <li class="flex items-center justify-between"><span class="flex items-center gap-2"><span class="h-2 w-2 rounded-sm bg-beam"></span>Maya</span><span class="text-white/60">1:45</span></li>
+            <li class="flex items-center justify-between"><span class="flex items-center gap-2"><span class="h-2 w-2 rounded-sm bg-beam-400"></span>Jordan</span><span class="text-white/60">2:08</span></li>
+            <li class="flex items-center justify-between"><span class="flex items-center gap-2"><span class="h-2 w-2 rounded-sm bg-violet-400"></span>Sam</span><span class="text-white/60">0:52</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Head pose distribution -->
+      <div class="mt-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+        <h3 class="text-sm font-semibold tracking-tight">Head pose</h3>
+        <p class="mt-0.5 text-[11px] text-white/40">Where are people looking?</p>
+        <ul class="mt-3 space-y-2.5 text-xs">
+          <li>
+            <div class="flex items-center justify-between"><span>Forward (toward speaker)</span><span class="text-white/60">62%</span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-white/[0.06]"><div class="h-1.5 rounded-full bg-brand" style="width:62%"></div></div>
+          </li>
+          <li>
+            <div class="flex items-center justify-between"><span>Left</span><span class="text-white/60">18%</span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-white/[0.06]"><div class="h-1.5 rounded-full bg-beam" style="width:18%"></div></div>
+          </li>
+          <li>
+            <div class="flex items-center justify-between"><span>Right</span><span class="text-white/60">14%</span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-white/[0.06]"><div class="h-1.5 rounded-full bg-beam-400" style="width:14%"></div></div>
+          </li>
+          <li>
+            <div class="flex items-center justify-between"><span>Down (notes)</span><span class="text-white/60">6%</span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-white/[0.06]"><div class="h-1.5 rounded-full bg-emerald-400" style="width:6%"></div></div>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Auto notes -->
+      <div class="mt-3 rounded-2xl border border-white/[0.06] bg-gradient-to-br from-brand/[0.06] to-beam/[0.06] p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold tracking-tight">Auto-summary</h3>
+          <span class="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/60">draft</span>
+        </div>
+        <p class="mt-2 text-xs leading-5 text-white/75">
+          Alex dominated discussion (~41% of speaking time). Maya engaged primarily during Q&amp;A windows (08:12, 14:30). Sam took notes for 9 minutes. Engagement (forward gaze) peaked at <span class="font-medium text-white">04:18</span>.
+        </p>
+        <button class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:text-brand/80 cursor-pointer">
+          Open full report
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+        </button>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<footer class="mx-auto max-w-[1440px] px-5 pb-10 pt-2 text-[11px] text-white/40">
+  Video360 · designed via ui-ux-pro-max · pattern: Video-First Hero · style: Dark Mode (OLED)
+</footer>
+
+</body>
+</html>
