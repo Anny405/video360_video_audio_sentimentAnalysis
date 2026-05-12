@@ -2,6 +2,8 @@
 
 A two-track pipeline + web UI that turns a 360° meeting recording plus 4 lapel-mic recordings into one synchronized view: per-participant cropped video, head-pose / gaze / note-taking behavior flags, dominant-channel speaker diarization, Whisper transcription with bleed-suppressed attribution, and per-utterance sentiment plotted on Russell's valence/arousal circumplex.
 
+![Unified app overview](assets/demos/01-app-overview.gif)
+
 > **Privacy note:** This repo is **code only**. Real meeting recordings are excluded via `.gitignore`. To see the full UI, run the pipelines on your own data — see [Run locally](#run-locally) below.
 
 🔗 **Live (code-only) page:** the GitHub Pages deployment of this repo serves [`index.html`](./index.html) at the root and [`mockups/app.html`](./mockups/app.html) for the unified UI shell. The shell needs locally-built `data.js` + `audio_data.js` to populate.
@@ -95,6 +97,26 @@ A single-page interactive view that:
 - Below: **multi-lane speaker timeline** (combined + per-speaker) clickable to seek
 - **Sentiment circumplex** SVG plot: 46 utterance dots + 3 speaker centroids on Russell's V/A plane, with quadrant tints, fine labels, hover detail, click-to-seek, and a sigmoid-stretch toggle for low-emotion meetings
 - Master clock = panorama; cropped videos and merged audio follow with 0.18s tolerance
+
+Transcript card scroll + click-to-seek:
+
+![Transcript drill-down](assets/demos/02-transcript-scroll.gif)
+
+## Standalone drill-down pages
+
+The unified [`app.html`](./mockups/app.html) is the main view. Two focused pages reuse the same data for single-modality inspection:
+
+### `mockups/demo.html` — video-only
+
+YOLO tracks, head-pose & note-taking flags, per-participant cropped video synced to the panorama.
+
+![Video-only page](assets/demos/03-video-only.gif)
+
+### `mockups/demo_audio.html` — audio-only
+
+Decrosstalk + dominant-channel diarization, per-channel & merged Whisper transcripts, sentiment circumplex.
+
+![Audio-only page](assets/demos/04-audio-only.gif)
 
 ## Sentiment method (sentiment.py)
 
